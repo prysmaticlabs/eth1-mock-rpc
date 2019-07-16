@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,8 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/prysmaticlabs/go-ssz"
-	"github.com/prysmaticlabs/prysm/shared/hashutil"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"golang.org/x/net/websocket"
@@ -28,12 +25,11 @@ const (
 )
 
 var (
-	keystorePath          = flag.String("keystore-path", "", "Path to a validator keystore directory")
-	password              = flag.String("password", "", "Password to unlocking the validator keystore directory")
-	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
-	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
-	depositEventSignature = []byte("DepositEvent(bytes,bytes,bytes,bytes,bytes)")
-	log                   = logrus.WithField("prefix", "main")
+	keystorePath = flag.String("keystore-path", "", "Path to a validator keystore directory")
+	password     = flag.String("password", "", "Password to unlocking the validator keystore directory")
+	wsPort       = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
+	httpPort     = flag.String("http-port", "7777", "Port on which to serve http listeners")
+	log          = logrus.WithField("prefix", "main")
 )
 
 type server struct {
@@ -90,88 +86,37 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	item := msgs[0]
-	if !item.isCall() {
-		log.WithField("messageType", item.Method).Error("Can only serve RPC call types via HTTP")
+	requestItem := msgs[0]
+	if !requestItem.isCall() {
+		log.WithField("messageType", requestItem.Method).Error("Can only serve RPC call types via HTTP")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	log.WithField("method", item.Method).Info("Received HTTP-RPC request")
-	log.Infof("%v", item)
-	if item.Method == "eth_getBlockByNumber" {
-		head := &types.Header{
-			ParentHash:  common.Hash([32]byte{}),
-			UncleHash:   types.EmptyUncleHash,
-			Coinbase:    common.Address([20]byte{}),
-			Root:        common.Hash([32]byte{}),
-			TxHash:      types.EmptyRootHash,
-			ReceiptHash: common.Hash([32]byte{}),
-			Bloom:       types.Bloom{},
-			Difficulty:  big.NewInt(20),
-			Number:      big.NewInt(int64(100)),
-			GasLimit:    100,
-			GasUsed:     100,
-			Time:        10,
-			Extra:       []byte("hello world"),
-		}
-		newItem := item.response(head)
-		codec.Write(context.Background(), newItem)
-	} else if item.Method == "eth_getLogs" {
-		depositEventHash := hashutil.HashKeccak256(depositEventSignature)
-		logs := make([]types.Log, len(s.deposits))
-		for i := 0; i < len(logs); i++ {
-			indexBuf := make([]byte, 8)
-			amountBuf := make([]byte, 8)
-			binary.LittleEndian.PutUint64(amountBuf, s.deposits[i].Amount)
-			binary.LittleEndian.PutUint64(indexBuf, uint64(i))
-			depositLog, err := packDepositLog(
-				s.deposits[i].Pubkey,
-				s.deposits[i].WithdrawalCredentials,
-				amountBuf,
-				s.deposits[i].Signature,
-				indexBuf,
-			)
-			if err != nil {
-				panic(err)
-			}
-			logs[i] = types.Log{
-				Address: common.Address([20]byte{}),
-				Topics:  []common.Hash{depositEventHash},
-				Data:    depositLog,
-				TxHash:  common.Hash([32]byte{}),
-				TxIndex: 100,
-				Index:   10,
-			}
-		}
-		newItem := item.response(logs)
-		codec.Write(context.Background(), newItem)
-	} else if item.Method == "eth_getBlockByHash" {
-		head := &types.Header{
-			ParentHash:  common.Hash([32]byte{}),
-			UncleHash:   types.EmptyUncleHash,
-			Coinbase:    common.Address([20]byte{}),
-			Root:        common.Hash([32]byte{}),
-			TxHash:      types.EmptyRootHash,
-			ReceiptHash: common.Hash([32]byte{}),
-			Bloom:       types.Bloom{},
-			Difficulty:  big.NewInt(20),
-			Number:      big.NewInt(int64(100)),
-			GasLimit:    100,
-			GasUsed:     100,
-			Time:        1578009600,
-			Extra:       []byte("hello world"),
-		}
-		newItem := item.response(head)
-		codec.Write(context.Background(), newItem)
-	} else {
-		depositRoot, err := ssz.HashTreeRootWithCapacity(s.deposits, 1<<depositContractTreeDepth)
-		if err != nil {
-			log.Error(err)
+	log.WithField("method", requestItem.Method).Info("Received HTTP-RPC request")
+	log.Infof("%v", requestItem)
+
+	eth1 := &eth1Handler{
+		deposits: s.deposits,
+		writer:   codec,
+	}
+
+	switch requestItem.Method {
+	case "eth_getBlockByNumber":
+		eth1.handleBlockByNumber(requestItem)
+	case "eth_getLogs":
+		if err := eth1.handleGetLogs(requestItem); err != nil {
+			log.WithError(err).Error("Could not respond to HTTP request")
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		newItem := item.response(fmt.Sprintf("%#x", depositRoot))
-		codec.Write(context.Background(), newItem)
-
+	case "eth_getBlockByHash":
+		eth1.handleBlockByHash(requestItem)
+	default:
+		if err := eth1.handleDepositRoot(requestItem); err != nil {
+			log.WithError(err).Error("Could not respond to HTTP request")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -180,8 +125,7 @@ func (s *server) WebsocketHandler() http.Handler {
 		Handler: func(conn *websocket.Conn) {
 			codec := newWebsocketCodec(conn)
 			defer codec.Close()
-			// Listen to read events from the codec
-			// and dispatch events or errors accordingly.
+			// Listen to read events from the codec and dispatch events or errors accordingly.
 			go s.read(codec)
 			go s.dispatch(codec)
 			<-codec.Closed()
