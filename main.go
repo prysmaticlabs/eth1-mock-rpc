@@ -166,7 +166,8 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		depositRoot, err := ssz.HashTreeRootWithCapacity(s.deposits, 1<<depositContractTreeDepth)
 		if err != nil {
-			panic(err)
+			log.Error(err)
+			return
 		}
 		newItem := item.response(fmt.Sprintf("%#x", depositRoot))
 		codec.Write(context.Background(), newItem)
