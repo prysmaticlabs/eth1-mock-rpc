@@ -3,10 +3,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     srcs = [
+        "contract.go",
         "deposits.go",
         "eth1_handlers.go",
     ],
-    importpath = "github.com/prysmaticlabs/eth1-mock-rpc/eth1",
+    importpath = "github.com/prysmaticlabs/prysm/eth1",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_ethereum_go_ethereum//accounts/abi:go_default_library",
