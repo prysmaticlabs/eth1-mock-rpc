@@ -3,6 +3,7 @@ package eth1
 import (
 	"encoding/binary"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -45,6 +46,7 @@ func (h *Handler) LatestChainHead() *types.Header {
 
 // BlockHeaderByHash returns a block header given a raw hash.
 func (h *Handler) BlockHeaderByHash() *types.Header {
+	t := time.Now().Unix()
 	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -57,7 +59,7 @@ func (h *Handler) BlockHeaderByHash() *types.Header {
 		Number:      big.NewInt(int64(100)),
 		GasLimit:    100,
 		GasUsed:     100,
-		Time:        1578009600,
+		Time:        uint64(t),
 		Extra:       []byte("hello world"),
 	}
 }
