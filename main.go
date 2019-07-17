@@ -155,7 +155,6 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 			return
 		case err := <-s.readErr:
 			log.WithError(err).Error("Could not read data from request")
-			return
 		case <-tick.C:
 			head := eth.LatestChainHead()
 			data, _ := json.Marshal(head)
