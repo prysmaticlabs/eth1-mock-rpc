@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "deposits.go",
+        "eth1_handlers.go",
+    ],
+    importpath = "github.com/prysmaticlabs/eth1-mock-rpc/eth1",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_ethereum_go_ethereum//accounts/abi:go_default_library",
+        "@com_github_ethereum_go_ethereum//common:go_default_library",
+        "@com_github_ethereum_go_ethereum//core/types:go_default_library",
+        "@com_github_prysmaticlabs_go_ssz//:go_default_library",
+        "@com_github_prysmaticlabs_prysm//shared/bls:go_default_library",
+        "@com_github_prysmaticlabs_prysm//shared/hashutil:go_default_library",
+    ],
+)
