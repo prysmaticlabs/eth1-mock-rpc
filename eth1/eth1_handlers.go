@@ -1,9 +1,7 @@
 package eth1
 
 import (
-	"context"
 	"encoding/binary"
-	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -12,30 +10,21 @@ import (
 	"github.com/prysmaticlabs/prysm/shared/hashutil"
 )
 
-// ResponseWriter details a struct which can write arbitrary data somewhere
-// given a context and and a value.
-type ResponseWriter interface {
-	Write(context.Context, interface{}) error
-}
-
 // Handler provides methods for handling eth1 JSON-RPC requests using
 // mock or constructed data accordingly.
 type Handler struct {
-	Deposits []*depositData
-	Writer   ResponseWriter
+	Deposits []*DepositData
 }
 
-func (h *Handler) handleDepositRoot(msg *jsonrpcMessage) error {
-	depositRoot, err := ssz.HashTreeRootWithCapacity(h.Deposits, 1<<depositContractTreeDepth)
-	if err != nil {
-		return err
-	}
-	newItem := msg.response(fmt.Sprintf("%#x", depositRoot))
-	h.Writer.Write(context.Background(), newItem)
-	return nil
+// DepositRoot produces a hash tree root of a list of deposits
+// to match the output of the deposit contract on the eth1 chain.
+func (h *Handler) DepositRoot() ([32]byte, error) {
+	return ssz.HashTreeRootWithCapacity(h.Deposits, 1<<depositContractTreeDepth)
 }
 
-func (h *Handler) handleBlockByHash(msg *jsonrpcMessage) {
+// LatestChainHead returns the latest eth1 chain into a channel.
+// TODO: Convert into a channel push.
+func (h *Handler) LatestChainHead() *types.Header {
 	head := &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -51,12 +40,12 @@ func (h *Handler) handleBlockByHash(msg *jsonrpcMessage) {
 		Time:        1578009600,
 		Extra:       []byte("hello world"),
 	}
-	newItem := msg.response(head)
-	h.Writer.Write(context.Background(), newItem)
+	return head
 }
 
-func (h *Handler) handleBlockByNumber(msg *jsonrpcMessage) {
-	head := &types.Header{
+// BlockHeaderByHash returns a block header given a raw hash.
+func (h *Handler) BlockHeaderByHash() *types.Header {
+	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
 		Coinbase:    common.Address([20]byte{}),
@@ -71,11 +60,32 @@ func (h *Handler) handleBlockByNumber(msg *jsonrpcMessage) {
 		Time:        1578009600,
 		Extra:       []byte("hello world"),
 	}
-	newItem := msg.response(head)
-	h.Writer.Write(context.Background(), newItem)
 }
 
-func (h *Handler) handleGetLogs(msg *jsonrpcMessage) error {
+// BlockHeaderByNumber returns a block header given a block height.
+func (h *Handler) BlockHeaderByNumber() *types.Header {
+	return &types.Header{
+		ParentHash:  common.Hash([32]byte{}),
+		UncleHash:   types.EmptyUncleHash,
+		Coinbase:    common.Address([20]byte{}),
+		Root:        common.Hash([32]byte{}),
+		TxHash:      types.EmptyRootHash,
+		ReceiptHash: common.Hash([32]byte{}),
+		Bloom:       types.Bloom{},
+		Difficulty:  big.NewInt(20),
+		Number:      big.NewInt(int64(100)),
+		GasLimit:    100,
+		GasUsed:     100,
+		Time:        1578009600,
+		Extra:       []byte("hello world"),
+	}
+}
+
+// DepositEventLogs returns a list of eth1 logs that have occurred
+// at a deposit contract address. This uses an internal list of deposit data
+// to return instead of relying on a real network and parsing a real deposit contract
+// for this information.
+func (h *Handler) DepositEventLogs() ([]types.Log, error) {
 	depositEventHash := hashutil.HashKeccak256(depositEventSignature)
 	logs := make([]types.Log, len(h.Deposits))
 	for i := 0; i < len(logs); i++ {
@@ -91,7 +101,7 @@ func (h *Handler) handleGetLogs(msg *jsonrpcMessage) error {
 			indexBuf,
 		)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		logs[i] = types.Log{
 			Address: common.Address([20]byte{}),
@@ -102,7 +112,5 @@ func (h *Handler) handleGetLogs(msg *jsonrpcMessage) error {
 			Index:   10,
 		}
 	}
-	newItem := msg.response(logs)
-	h.Writer.Write(context.Background(), newItem)
-	return nil
+	return logs, nil
 }

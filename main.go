@@ -6,14 +6,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"golang.org/x/net/websocket"
@@ -33,7 +31,7 @@ var (
 )
 
 type server struct {
-	deposits      []*depositData
+	deposits      []*eth1.DepositData
 	close         chan struct{}
 	readOperation chan []*jsonrpcMessage // read messages.
 	readErr       chan error             // errors from read.
@@ -46,11 +44,12 @@ func main() {
 	formatter.FullTimestamp = true
 	logrus.SetFormatter(formatter)
 
-	// deposits, err := createDepositDataFromKeystore(*keystorePath, *password)
-	// if err != nil {
-	// 	log.Fatalf("Could not create deposit data from keystore directory: %v", err)
-	// }
-	// log.Infof("Successfully loaded %d deposits from the keystore directory", len(deposits))
+	deposits, err := createDepositDataFromKeystore(*keystorePath, *password)
+	if err != nil {
+		log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+	}
+	log.Infof("Successfully loaded %d deposits from the keystore directory", len(deposits))
+
 	httpListener, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", *httpPort))
 	if err != nil {
 		panic(err)
@@ -60,7 +59,7 @@ func main() {
 		panic(err)
 	}
 	srv := &server{
-		deposits:      nil,
+		deposits:      deposits,
 		close:         make(chan struct{}),
 		readOperation: make(chan []*jsonrpcMessage),
 		readErr:       make(chan error),
@@ -76,6 +75,7 @@ func main() {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
 	body := io.LimitReader(r.Body, maxRequestContentLength)
 	conn := &httpServerConn{Reader: body, Writer: w, r: r}
 	codec := NewJSONCodec(conn)
@@ -94,29 +94,38 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	log.WithField("method", requestItem.Method).Info("Received HTTP-RPC request")
 	log.Infof("%v", requestItem)
-
-	eth1 := &eth1Handler{
-		deposits: s.deposits,
-		writer:   codec,
+	ethHandler := &eth1.Handler{
+		Deposits: s.deposits,
 	}
 
 	switch requestItem.Method {
 	case "eth_getBlockByNumber":
-		eth1.handleBlockByNumber(requestItem)
-	case "eth_getLogs":
-		if err := eth1.handleGetLogs(requestItem); err != nil {
-			log.WithError(err).Error("Could not respond to HTTP request")
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
+		block := ethHandler.BlockHeaderByNumber()
+		response := requestItem.response(block)
+		codec.Write(ctx, response)
 	case "eth_getBlockByHash":
-		eth1.handleBlockByHash(requestItem)
-	default:
-		if err := eth1.handleDepositRoot(requestItem); err != nil {
+		block := ethHandler.BlockHeaderByHash()
+		response := requestItem.response(block)
+		codec.Write(ctx, response)
+	case "eth_getLogs":
+		logs, err := ethHandler.DepositEventLogs()
+		if err != nil {
 			log.WithError(err).Error("Could not respond to HTTP request")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		response := requestItem.response(logs)
+		codec.Write(ctx, response)
+	default:
+		// TODO: handle this by method name and use default for unknown cases.
+		root, err := ethHandler.DepositRoot()
+		if err != nil {
+			log.WithError(err).Error("Could not respond to HTTP request")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		response := requestItem.response(fmt.Sprintf("%#x", root))
+		codec.Write(ctx, response)
 	}
 }
 
@@ -134,6 +143,9 @@ func (s *server) WebsocketHandler() http.Handler {
 }
 
 func (s *server) dispatch(codec ServerCodec) {
+	eth := &eth1.Handler{
+		Deposits: s.deposits,
+	}
 	tick := time.NewTicker(time.Second * 10)
 	var latestSubID rpc.ID
 	for {
@@ -141,23 +153,9 @@ func (s *server) dispatch(codec ServerCodec) {
 		case <-s.close:
 			return
 		case err := <-s.readErr:
-			log.WithError(err).Error("Could not read")
+			log.WithError(err).Error("Could not read data from request")
 		case <-tick.C:
-			head := &types.Header{
-				ParentHash:  common.Hash([32]byte{}),
-				UncleHash:   types.EmptyUncleHash,
-				Coinbase:    common.Address([20]byte{}),
-				Root:        common.Hash([32]byte{}),
-				TxHash:      types.EmptyRootHash,
-				ReceiptHash: common.Hash([32]byte{}),
-				Bloom:       types.Bloom{},
-				Difficulty:  big.NewInt(20),
-				Number:      big.NewInt(int64(100)),
-				GasLimit:    100,
-				GasUsed:     100,
-				Time:        1578009600,
-				Extra:       []byte("hello world"),
-			}
+			head := eth.LatestChainHead()
 			data, _ := json.Marshal(head)
 			params, _ := json.Marshal(&subscriptionResult{ID: string(latestSubID), Result: data})
 			ctx := context.Background()
@@ -166,7 +164,6 @@ func (s *server) dispatch(codec ServerCodec) {
 				Method:  "eth_subscription",
 				Params:  params,
 			}
-			log.Infof("Writing item: %v", item)
 			codec.Write(ctx, item)
 		case msgs := <-s.readOperation:
 			sub := &rpc.Subscription{ID: rpc.NewID()}

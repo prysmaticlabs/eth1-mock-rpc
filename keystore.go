@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path"
 
+	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/prysmaticlabs/prysm/shared/keystore"
 )
 
@@ -12,7 +13,7 @@ const (
 	validatorPrivkeyFileName  = "/validatorprivatekey"
 )
 
-func createDepositDataFromKeystore(directory string, password string) ([]*depositData, error) {
+func createDepositDataFromKeystore(directory string, password string) ([]*eth1.DepositData, error) {
 	if directory == "" || password == "" {
 		return nil, errors.New("expected a path to the validator keystore and password to be provided, received nil")
 	}
@@ -38,11 +39,11 @@ func createDepositDataFromKeystore(directory string, password string) ([]*deposi
 	for k := range withdrawalKeys {
 		withdrawalMapKeys = append(withdrawalMapKeys, k)
 	}
-	depositDataItems := make([]*depositData, len(valMapKeys))
+	depositDataItems := make([]*eth1.DepositData, len(valMapKeys))
 	for i := 0; i < len(depositDataItems); i++ {
 		valSecretKey := validatorKeys[valMapKeys[i]].SecretKey.Marshal()
 		withdrawalSecretKey := withdrawalKeys[withdrawalMapKeys[i]].SecretKey.Marshal()
-		data, err := createDepositData(valSecretKey, withdrawalSecretKey, maxEffectiveBalance)
+		data, err := eth1.CreateDepositData(valSecretKey, withdrawalSecretKey, eth1.MaxEffectiveBalance)
 		if err != nil {
 			return nil, err
 		}
