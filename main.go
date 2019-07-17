@@ -33,8 +33,8 @@ var (
 type server struct {
 	deposits      []*eth1.DepositData
 	close         chan struct{}
-	readOperation chan []*jsonrpcMessage // read messages.
-	readErr       chan error             // errors from read.
+	readOperation chan []*jsonrpcMessage // Channel for read messages from the codec.
+	readErr       chan error
 }
 
 func main() {
@@ -44,6 +44,7 @@ func main() {
 	formatter.FullTimestamp = true
 	logrus.SetFormatter(formatter)
 
+	log.Infof("Parsing and decrypting private keys from %s, this may take a while...", *keystorePath)
 	deposits, err := createDepositDataFromKeystore(*keystorePath, *password)
 	if err != nil {
 		log.Fatalf("Could not create deposit data from keystore directory: %v", err)
@@ -68,7 +69,7 @@ func main() {
 	go http.Serve(httpListener, srv)
 
 	log.Println("Starting WebSocket listener on port :7778")
-	wsSrv := &http.Server{Handler: srv.WebsocketHandler()}
+	wsSrv := &http.Server{Handler: srv.ServeWebsocket()}
 	go wsSrv.Serve(wsListener)
 
 	select {}
@@ -129,20 +130,20 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) WebsocketHandler() http.Handler {
+func (s *server) ServeWebsocket() http.Handler {
 	return websocket.Server{
 		Handler: func(conn *websocket.Conn) {
 			codec := newWebsocketCodec(conn)
 			defer codec.Close()
 			// Listen to read events from the codec and dispatch events or errors accordingly.
-			go s.read(codec)
-			go s.dispatch(codec)
+			go s.websocketReadLoop(codec)
+			go s.dispatchWebsocketEventLoop(codec)
 			<-codec.Closed()
 		},
 	}
 }
 
-func (s *server) dispatch(codec ServerCodec) {
+func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 	eth := &eth1.Handler{
 		Deposits: s.deposits,
 	}
@@ -179,7 +180,7 @@ func (s *server) dispatch(codec ServerCodec) {
 	}
 }
 
-func (s *server) read(codec ServerCodec) {
+func (s *server) websocketReadLoop(codec ServerCodec) {
 	for {
 		msgs, _, err := codec.Read()
 		if _, ok := err.(*json.SyntaxError); ok {

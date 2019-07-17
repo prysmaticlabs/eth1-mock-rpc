@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"path"
 
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/prysmaticlabs/prysm/shared/keystore"
@@ -17,13 +16,11 @@ func createDepositDataFromKeystore(directory string, password string) ([]*eth1.D
 	if directory == "" || password == "" {
 		return nil, errors.New("expected a path to the validator keystore and password to be provided, received nil")
 	}
-	log.Infof("Parsing shard withdrawal private keys from %s, this may take a while...", path.Join(directory, withdrawalPrivkeyFileName))
 	ks := keystore.NewKeystore(directory)
 	withdrawalKeys, err := ks.GetKeys(directory, withdrawalPrivkeyFileName, password)
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Parsing validator private keys from %s, this may take a while...", path.Join(directory, validatorPrivkeyFileName))
 	validatorKeys, err := ks.GetKeys(directory, validatorPrivkeyFileName, password)
 	if err != nil {
 		return nil, err
