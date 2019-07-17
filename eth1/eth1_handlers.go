@@ -104,12 +104,13 @@ func (h *Handler) DepositEventLogs() ([]types.Log, error) {
 			return nil, nil
 		}
 		logs[i] = types.Log{
-			Address: common.Address([20]byte{}),
-			Topics:  []common.Hash{depositEventHash},
-			Data:    depositLog,
-			TxHash:  common.Hash([32]byte{}),
-			TxIndex: 100,
-			Index:   10,
+			BlockHash: common.Hash([32]byte{1, 2, 3, 4, 5}),
+			Address:   common.Address([20]byte{}),
+			Topics:    []common.Hash{depositEventHash},
+			Data:      depositLog,
+			TxHash:    common.Hash([32]byte{}),
+			TxIndex:   100,
+			Index:     10,
 		}
 	}
 	return logs, nil

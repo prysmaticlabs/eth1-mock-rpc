@@ -154,6 +154,7 @@ func (s *server) dispatch(codec ServerCodec) {
 			return
 		case err := <-s.readErr:
 			log.WithError(err).Error("Could not read data from request")
+			return
 		case <-tick.C:
 			head := eth.LatestChainHead()
 			data, _ := json.Marshal(head)
