@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/ioutil"
 
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/prysmaticlabs/prysm/shared/keystore"
@@ -12,7 +13,6 @@ import (
 const (
 	withdrawalPrivkeyFileName = "/shardwithdrawalkey"
 	validatorPrivkeyFileName  = "/validatorprivatekey"
-	cacheDirector             = ".cache"
 )
 
 func createDepositDataFromKeystore(directory string, password string) ([]*eth1.DepositData, error) {
@@ -53,12 +53,12 @@ func createDepositDataFromKeystore(directory string, password string) ([]*eth1.D
 }
 
 func retrieveDepositData(r io.Reader) ([]*eth1.DepositData, error) {
-	encodedData := []byte{}
-	if _, err := r.Read(encodedData); err != nil {
+	encodedData, err := ioutil.ReadAll(r)
+	if err != nil {
 		return nil, err
 	}
 	var deposits []*eth1.DepositData
-	if err := json.Unmarshal(encodedData, deposits); err != nil {
+	if err := json.Unmarshal(encodedData, &deposits); err != nil {
 		return nil, err
 	}
 	return deposits, nil
