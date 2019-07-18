@@ -56,7 +56,7 @@ func main() {
 	if r, err := os.Open(cachePath); err == nil {
 		deposits, err = retrieveDepositData(r)
 		if err != nil {
-			log.Fatalf("Could not retrieve deposits from .cache: %v", err)
+			log.Fatalf("Could not retrieve deposits from %s: %v", cachePath, err)
 		}
 	} else if os.IsNotExist(err) {
 		// If the file does not exist at the .cache directory, we decrypt
@@ -74,7 +74,7 @@ func main() {
 			log.Errorf("Could not persist deposits to disk: %v", err)
 		}
 	} else {
-		log.Fatalf("Could not read from .cache directory: %v", err)
+		log.Fatalf("Could not read from %s: %v", cachePath, err)
 	}
 
 	log.Infof("Successfully loaded %d deposits from the keystore directory", len(deposits))
