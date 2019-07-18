@@ -160,14 +160,12 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *server) ServeWebsocket() http.Handler {
 	return websocket.Server{
 		Handler: func(conn *websocket.Conn) {
-			log.Info("READING AGAIN FROM WSS")
 			codec := newWebsocketCodec(conn)
 			defer codec.Close()
 			// Listen to read events from the codec and dispatch events or errors accordingly.
 			go s.websocketReadLoop(codec)
 			go s.dispatchWebsocketEventLoop(codec)
 			<-codec.Closed()
-			log.Info("CODEC CLOSED")
 		},
 	}
 }
@@ -181,7 +179,6 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 	for {
 		select {
 		case <-s.close:
-			log.Info("Closing dispatch loop")
 			return
 		case err := <-s.readErr:
 			log.WithError(err).Error("Could not read data from request")
@@ -214,7 +211,6 @@ func (s *server) websocketReadLoop(codec ServerCodec) {
 	for {
 		select {
 		case <-s.close:
-			log.Info("Closing read loop")
 			return
 		default:
 			msgs, _, err := codec.Read()
