@@ -35,7 +35,7 @@ var (
 
 type server struct {
 	deposits      []*eth1.DepositData
-	close         chan struct{}
+	close         chan bool
 	readOperation chan []*jsonrpcMessage // Channel for read messages from the codec.
 	readErr       chan error
 }
@@ -88,7 +88,7 @@ func main() {
 	}
 	srv := &server{
 		deposits:      deposits,
-		close:         make(chan struct{}),
+		close:         make(chan bool),
 		readOperation: make(chan []*jsonrpcMessage),
 		readErr:       make(chan error),
 	}
@@ -160,12 +160,14 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *server) ServeWebsocket() http.Handler {
 	return websocket.Server{
 		Handler: func(conn *websocket.Conn) {
+			log.Info("READING AGAIN FROM WSS")
 			codec := newWebsocketCodec(conn)
 			defer codec.Close()
 			// Listen to read events from the codec and dispatch events or errors accordingly.
 			go s.websocketReadLoop(codec)
 			go s.dispatchWebsocketEventLoop(codec)
 			<-codec.Closed()
+			log.Info("CODEC CLOSED")
 		},
 	}
 }
@@ -179,9 +181,11 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 	for {
 		select {
 		case <-s.close:
+			log.Info("Closing dispatch loop")
 			return
 		case err := <-s.readErr:
 			log.WithError(err).Error("Could not read data from request")
+			return
 		case <-tick.C:
 			head := eth.LatestChainHead()
 			data, _ := json.Marshal(head)
@@ -208,14 +212,20 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 
 func (s *server) websocketReadLoop(codec ServerCodec) {
 	for {
-		msgs, _, err := codec.Read()
-		if _, ok := err.(*json.SyntaxError); ok {
-			codec.Write(context.Background(), errorMessage(err))
-		}
-		if err != nil {
-			s.readErr <- err
+		select {
+		case <-s.close:
+			log.Info("Closing read loop")
 			return
+		default:
+			msgs, _, err := codec.Read()
+			if _, ok := err.(*json.SyntaxError); ok {
+				codec.Write(context.Background(), errorMessage(err))
+			}
+			if err != nil {
+				s.readErr <- err
+				return
+			}
+			s.readOperation <- msgs
 		}
-		s.readOperation <- msgs
 	}
 }
