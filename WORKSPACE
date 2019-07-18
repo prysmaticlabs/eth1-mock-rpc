@@ -148,7 +148,7 @@ go_repository(
 
 go_repository(
     name = "com_github_sirupsen_logrus",
-    commit = "e1e72e9de974bd926e5c56f83753fba2df402ce5",  # v1.3.0
+    commit = "ba1b36c82c5e05c4f912a88eab0dcd91a171688f",  # v0.11.5
     importpath = "github.com/sirupsen/logrus",
 )
 
