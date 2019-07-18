@@ -12,8 +12,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
-
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/sirupsen/logrus"
@@ -32,7 +30,6 @@ var (
 	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
 	log                   = logrus.WithField("prefix", "main")
-	cacheDirectory        = ".cache"
 	persistedDepositsJSON = "deposits.json"
 )
 
@@ -51,8 +48,8 @@ func main() {
 	logrus.SetFormatter(formatter)
 
 	var deposits []*eth1.DepositData
-	cachePath := path.Join(bazel.RUNFILES_DIR, cacheDirectory, persistedDepositsJSON)
-
+	tmp := os.TempDir()
+	cachePath := path.Join(tmp, persistedDepositsJSON)
 	// We attempt to retrieve deposits from a local .cache/ directory
 	// as an optimization to prevent reading and decrypting raw private keys
 	// from the validator keystore every single time the mock server is launched.
