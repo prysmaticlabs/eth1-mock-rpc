@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
+	"io/ioutil"
 
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/prysmaticlabs/prysm/shared/keystore"
@@ -47,4 +50,27 @@ func createDepositDataFromKeystore(directory string, password string) ([]*eth1.D
 		depositDataItems[i] = data
 	}
 	return depositDataItems, nil
+}
+
+func retrieveDepositData(r io.Reader) ([]*eth1.DepositData, error) {
+	encodedData, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	var deposits []*eth1.DepositData
+	if err := json.Unmarshal(encodedData, &deposits); err != nil {
+		return nil, err
+	}
+	return deposits, nil
+}
+
+func persistDepositData(w io.Writer, deposits []*eth1.DepositData) error {
+	encodedData, err := json.Marshal(deposits)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(encodedData); err != nil {
+		return err
+	}
+	return nil
 }

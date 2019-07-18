@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -23,16 +25,17 @@ const (
 )
 
 var (
-	keystorePath = flag.String("keystore-path", "", "Path to a validator keystore directory")
-	password     = flag.String("password", "", "Password to unlocking the validator keystore directory")
-	wsPort       = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
-	httpPort     = flag.String("http-port", "7777", "Port on which to serve http listeners")
-	log          = logrus.WithField("prefix", "main")
+	keystorePath          = flag.String("keystore-path", "", "Path to a validator keystore directory")
+	password              = flag.String("password", "", "Password to unlocking the validator keystore directory")
+	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
+	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
+	log                   = logrus.WithField("prefix", "main")
+	persistedDepositsJSON = "deposits.json"
 )
 
 type server struct {
 	deposits      []*eth1.DepositData
-	close         chan struct{}
+	close         chan bool
 	readOperation chan []*jsonrpcMessage // Channel for read messages from the codec.
 	readErr       chan error
 }
@@ -44,13 +47,37 @@ func main() {
 	formatter.FullTimestamp = true
 	logrus.SetFormatter(formatter)
 
-	log.Infof("Parsing and decrypting private keys from %s, this may take a while...", *keystorePath)
-	deposits, err := createDepositDataFromKeystore(*keystorePath, *password)
-	if err != nil {
-		log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+	var deposits []*eth1.DepositData
+	tmp := os.TempDir()
+	cachePath := path.Join(tmp, persistedDepositsJSON)
+	// We attempt to retrieve deposits from a local tmp file
+	// as an optimization to prevent reading and decrypting raw private keys
+	// from the validator keystore every single time the mock server is launched.
+	if r, err := os.Open(cachePath); err == nil {
+		deposits, err = retrieveDepositData(r)
+		if err != nil {
+			log.Fatalf("Could not retrieve deposits from %s: %v", cachePath, err)
+		}
+	} else if os.IsNotExist(err) {
+		// If the file does not exist at the tmp directory, we decrypt
+		// from the keystore directory and then attempt to persist to the cache.
+		log.Infof("Decrypting private keys from %s, this may take a while...", *keystorePath)
+		deposits, err = createDepositDataFromKeystore(*keystorePath, *password)
+		if err != nil {
+			log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+		}
+		w, err := os.Create(cachePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := persistDepositData(w, deposits); err != nil {
+			log.Errorf("Could not persist deposits to disk: %v", err)
+		}
+	} else {
+		log.Fatalf("Could not read from %s: %v", cachePath, err)
 	}
-	log.Infof("Successfully loaded %d deposits from the keystore directory", len(deposits))
 
+	log.Infof("Successfully loaded %d deposits from the keystore directory", len(deposits))
 	httpListener, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", *httpPort))
 	if err != nil {
 		panic(err)
@@ -61,7 +88,7 @@ func main() {
 	}
 	srv := &server{
 		deposits:      deposits,
-		close:         make(chan struct{}),
+		close:         make(chan bool),
 		readOperation: make(chan []*jsonrpcMessage),
 		readErr:       make(chan error),
 	}
@@ -155,6 +182,7 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 			return
 		case err := <-s.readErr:
 			log.WithError(err).Error("Could not read data from request")
+			return
 		case <-tick.C:
 			head := eth.LatestChainHead()
 			data, _ := json.Marshal(head)
@@ -181,14 +209,19 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 
 func (s *server) websocketReadLoop(codec ServerCodec) {
 	for {
-		msgs, _, err := codec.Read()
-		if _, ok := err.(*json.SyntaxError); ok {
-			codec.Write(context.Background(), errorMessage(err))
-		}
-		if err != nil {
-			s.readErr <- err
+		select {
+		case <-s.close:
 			return
+		default:
+			msgs, _, err := codec.Read()
+			if _, ok := err.(*json.SyntaxError); ok {
+				codec.Write(context.Background(), errorMessage(err))
+			}
+			if err != nil {
+				s.readErr <- err
+				return
+			}
+			s.readOperation <- msgs
 		}
-		s.readOperation <- msgs
 	}
 }
