@@ -50,7 +50,7 @@ func main() {
 	var deposits []*eth1.DepositData
 	tmp := os.TempDir()
 	cachePath := path.Join(tmp, persistedDepositsJSON)
-	// We attempt to retrieve deposits from a local .cache/ directory
+	// We attempt to retrieve deposits from a local tmp file
 	// as an optimization to prevent reading and decrypting raw private keys
 	// from the validator keystore every single time the mock server is launched.
 	if r, err := os.Open(cachePath); err == nil {
@@ -59,7 +59,7 @@ func main() {
 			log.Fatalf("Could not retrieve deposits from %s: %v", cachePath, err)
 		}
 	} else if os.IsNotExist(err) {
-		// If the file does not exist at the .cache directory, we decrypt
+		// If the file does not exist at the tmp directory, we decrypt
 		// from the keystore directory and then attempt to persist to the cache.
 		log.Infof("Decrypting private keys from %s, this may take a while...", *keystorePath)
 		deposits, err = createDepositDataFromKeystore(*keystorePath, *password)
