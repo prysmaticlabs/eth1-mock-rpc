@@ -34,7 +34,10 @@ var (
 )
 
 type server struct {
-	deposits      []*eth1.DepositData
+	deposits []*eth1.DepositData
+}
+
+type websocketHandler struct {
 	close         chan bool
 	readOperation chan []*jsonrpcMessage // Channel for read messages from the codec.
 	readErr       chan error
@@ -87,10 +90,7 @@ func main() {
 		panic(err)
 	}
 	srv := &server{
-		deposits:      deposits,
-		close:         make(chan bool),
-		readOperation: make(chan []*jsonrpcMessage),
-		readErr:       make(chan error),
+		deposits: deposits,
 	}
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
@@ -161,26 +161,32 @@ func (s *server) ServeWebsocket() http.Handler {
 	return websocket.Server{
 		Handler: func(conn *websocket.Conn) {
 			codec := newWebsocketCodec(conn)
+			wsHandler := &websocketHandler{
+				close:         make(chan bool),
+				readOperation: make(chan []*jsonrpcMessage),
+				readErr:       make(chan error),
+			}
+
 			defer codec.Close()
 			// Listen to read events from the codec and dispatch events or errors accordingly.
-			go s.websocketReadLoop(codec)
-			go s.dispatchWebsocketEventLoop(codec)
+			go wsHandler.websocketReadLoop(codec)
+			go wsHandler.dispatchWebsocketEventLoop(codec, s.deposits)
 			<-codec.Closed()
 		},
 	}
 }
 
-func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
+func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec, deposits []*eth1.DepositData) {
 	eth := &eth1.Handler{
-		Deposits: s.deposits,
+		Deposits: deposits,
 	}
 	tick := time.NewTicker(time.Second * 10)
 	var latestSubID rpc.ID
 	for {
 		select {
-		case <-s.close:
+		case <-w.close:
 			return
-		case err := <-s.readErr:
+		case err := <-w.readErr:
 			log.WithError(err).Error("Could not read data from request")
 			return
 		case <-tick.C:
@@ -194,7 +200,7 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 				Params:  params,
 			}
 			codec.Write(ctx, item)
-		case msgs := <-s.readOperation:
+		case msgs := <-w.readOperation:
 			sub := &rpc.Subscription{ID: rpc.NewID()}
 			item := &jsonrpcMessage{
 				Version: msgs[0].Version,
@@ -207,10 +213,10 @@ func (s *server) dispatchWebsocketEventLoop(codec ServerCodec) {
 	}
 }
 
-func (s *server) websocketReadLoop(codec ServerCodec) {
+func (w *websocketHandler) websocketReadLoop(codec ServerCodec) {
 	for {
 		select {
-		case <-s.close:
+		case <-w.close:
 			return
 		default:
 			msgs, _, err := codec.Read()
@@ -218,10 +224,10 @@ func (s *server) websocketReadLoop(codec ServerCodec) {
 				codec.Write(context.Background(), errorMessage(err))
 			}
 			if err != nil {
-				s.readErr <- err
+				w.readErr <- err
 				return
 			}
-			s.readOperation <- msgs
+			w.readOperation <- msgs
 		}
 	}
 }
