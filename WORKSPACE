@@ -182,6 +182,12 @@ go_repository(
     importpath = "github.com/deckarep/golang-set",
 )
 
+go_repository(
+    name = "in_gopkg_yaml_v3",
+    commit = "674ba3eaed223079f9377fbb0c98c0951bf6ec10",
+    importpath = "gopkg.in/yaml.v3",
+)
+
 load("@com_github_prysmaticlabs_go_ssz//:deps.bzl", "go_ssz_dependencies")
 
 go_ssz_dependencies()
