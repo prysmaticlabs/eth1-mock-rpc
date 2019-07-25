@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-
+    
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/prysmaticlabs/prysm/shared/keystore"
 	"gopkg.in/yaml.v3"
@@ -106,12 +106,13 @@ func persistDepositData(w io.Writer, deposits []*eth1.DepositData) error {
 func persistValidatorDepositData(w io.Writer, pubkeys []string, privkeys []string, deposits []*eth1.DepositData) error {
 
 	type Dummy struct {
-		Pubkey                string 
+		Pubkey                string
 		WithdrawalCredentials string
-		Amount                uint64 
+		Amount                uint64
 		Signature             string
 	}
 	type DepositDataAndKeys struct {
+		Index       int
 		DepositData *Dummy
 		PubKey      string
 		PrivKey     string
@@ -123,11 +124,11 @@ func persistValidatorDepositData(w io.Writer, pubkeys []string, privkeys []strin
 	//fmlData := make([]*eth1.DepositData, len(valMapKeys))
 	depositDataAndKeys := make([]*DepositDataAndKeys, len(deposits))
 	for i := 0; i < len(deposits); i++ {
-    
+
 		dummy := &Dummy{Pubkey: hex.EncodeToString(deposits[i].Pubkey), WithdrawalCredentials: hex.EncodeToString(deposits[i].WithdrawalCredentials), Amount: deposits[i].Amount, Signature: hex.EncodeToString(deposits[i].Signature)}
-		depositDataAndKeys[i] = &DepositDataAndKeys{ DepositData: dummy, PubKey: pubkeys[i], PrivKey: privkeys[i]}
+		depositDataAndKeys[i] = &DepositDataAndKeys{Index: i, DepositData: dummy, PubKey: pubkeys[i], PrivKey: privkeys[i]}
 	}
-	fmlData := FML{ DepositDataKeys:depositDataAndKeys}
+	fmlData := FML{DepositDataKeys: depositDataAndKeys}
 	yamlOutput, err := yaml.Marshal(fmlData)
 	if err != nil {
 		return err
