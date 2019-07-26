@@ -183,9 +183,15 @@ go_repository(
 )
 
 go_repository(
-    name = "in_gopkg_yaml_v3",
-    commit = "674ba3eaed223079f9377fbb0c98c0951bf6ec10",
-    importpath = "gopkg.in/yaml.v3",
+    name = "in_gopkg_yaml_v2",
+    commit = "51d6538a90f86fe93ac480b35f37b2be17fef232",
+    importpath = "gopkg.in/yaml.v2",
+)
+
+go_repository(
+    name = "com_github_ghodss_yaml",
+    commit = "0ca9ea5df5451ffdf184b4428c902747c2c11cd7",  # v1.0.0
+    importpath = "github.com/ghodss/yaml",
 )
 
 load("@com_github_prysmaticlabs_go_ssz//:deps.bzl", "go_ssz_dependencies")

@@ -1,15 +1,14 @@
 package main
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"io/ioutil"
-    
+
+	"github.com/ghodss/yaml"
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/prysmaticlabs/prysm/shared/keystore"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -54,7 +53,7 @@ func createDepositDataFromKeystore(directory string, password string) ([]*eth1.D
 	return depositDataItems, nil
 }
 
-func createValidatorKeysFromKeystore(directory string, password string) ([]string, []string, error) {
+func createValidatorKeysFromKeystore(directory string, password string) ([][]byte, [][]byte, error) {
 	if directory == "" || password == "" {
 		return nil, nil, errors.New("expected a path to the validator keystore and password to be provided, received nil")
 	}
@@ -68,11 +67,11 @@ func createValidatorKeysFromKeystore(directory string, password string) ([]strin
 	for k := range validatorKeys {
 		valMapKeys = append(valMapKeys, k)
 	}
-	pubKeys := []string{}
-	privKeys := []string{}
+	pubKeys := [][]byte{}
+	privKeys := [][]byte{}
 	for i := 0; i < len(valMapKeys); i++ {
-		pk := hex.EncodeToString(validatorKeys[valMapKeys[i]].PublicKey.Marshal())
-		sk := hex.EncodeToString(validatorKeys[valMapKeys[i]].SecretKey.Marshal())
+		pk := validatorKeys[valMapKeys[i]].PublicKey.Marshal()
+		sk := validatorKeys[valMapKeys[i]].SecretKey.Marshal()
 		pubKeys = append(pubKeys, pk)
 		privKeys = append(privKeys, sk)
 	}
@@ -103,30 +102,37 @@ func persistDepositData(w io.Writer, deposits []*eth1.DepositData) error {
 	return nil
 }
 
-func persistValidatorDepositData(w io.Writer, pubkeys []string, privkeys []string, deposits []*eth1.DepositData) error {
-
+func persistValidatorDepositData(w io.Writer, pubkeys [][]byte, privkeys [][]byte, deposits []*eth1.DepositData) error {
 	type Dummy struct {
-		Pubkey                string
-		WithdrawalCredentials string
+		Pubkey                []byte
+		WithdrawalCredentials []byte
 		Amount                uint64
-		Signature             string
+		Signature             []byte
 	}
 	type DepositDataAndKeys struct {
 		Index       int
 		DepositData *Dummy
-		PubKey      string
-		PrivKey     string
+		Pubkey      []byte
+		Privkey     []byte
 	}
-
 	type FML struct {
 		DepositDataKeys []*DepositDataAndKeys
 	}
 	//fmlData := make([]*eth1.DepositData, len(valMapKeys))
 	depositDataAndKeys := make([]*DepositDataAndKeys, len(deposits))
 	for i := 0; i < len(deposits); i++ {
-
-		dummy := &Dummy{Pubkey: hex.EncodeToString(deposits[i].Pubkey), WithdrawalCredentials: hex.EncodeToString(deposits[i].WithdrawalCredentials), Amount: deposits[i].Amount, Signature: hex.EncodeToString(deposits[i].Signature)}
-		depositDataAndKeys[i] = &DepositDataAndKeys{Index: i, DepositData: dummy, PubKey: pubkeys[i], PrivKey: privkeys[i]}
+		dummy := &Dummy{
+			Pubkey:                deposits[i].Pubkey,
+			WithdrawalCredentials: deposits[i].WithdrawalCredentials,
+			Amount:                deposits[i].Amount,
+			Signature:             deposits[i].Signature,
+		}
+		depositDataAndKeys[i] = &DepositDataAndKeys{
+			Index:       i,
+			DepositData: dummy,
+			Pubkey:      pubkeys[i],
+			Privkey:     privkeys[i],
+		}
 	}
 	fmlData := FML{DepositDataKeys: depositDataAndKeys}
 	yamlOutput, err := yaml.Marshal(fmlData)
