@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -34,7 +35,8 @@ var (
 )
 
 type server struct {
-	deposits []*eth1.DepositData
+	deposits    []*eth1.DepositData
+	genesisTime uint64
 }
 
 type websocketHandler struct {
@@ -90,7 +92,8 @@ func main() {
 		panic(err)
 	}
 	srv := &server{
-		deposits: deposits,
+		deposits:    deposits,
+		genesisTime: uint64(time.Now().Add(10 * time.Second).Unix()),
 	}
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
@@ -121,11 +124,13 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.WithField("method", requestItem.Method).Info("Received HTTP-RPC request")
-	log.Infof("%v", requestItem)
 	ethHandler := &eth1.Handler{
-		Deposits: s.deposits,
+		Deposits:    s.deposits,
+		GenesisTime: s.genesisTime,
 	}
 
+	stringRep := requestItem.String()
+	log.Info("request method %s", requestItem.Method)
 	switch requestItem.Method {
 	case "eth_getBlockByNumber":
 		block := ethHandler.BlockHeaderByNumber()
@@ -144,17 +149,37 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		response := requestItem.response(logs)
 		codec.Write(ctx, response)
-	default:
-		// TODO: handle this by method name and use default for unknown cases.
-		root, err := ethHandler.DepositRoot()
-		if err != nil {
-			log.WithError(err).Error("Could not respond to HTTP request")
-			w.WriteHeader(http.StatusInternalServerError)
+	case "eth_call":
+		if strings.Contains(stringRep, ethHandler.DepositMethodID()) {
+			count := ethHandler.DepositCount()
+			depCount, err := eth1.PackDepositCount(count[:])
+			if err != nil {
+				log.WithError(err).Error("Could not respond to HTTP request")
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			response := requestItem.response(fmt.Sprintf("%#x", depCount))
+			codec.Write(ctx, response)
 			return
 		}
-		response := requestItem.response(fmt.Sprintf("%#x", root))
-		codec.Write(ctx, response)
+		if strings.Contains(stringRep, ethHandler.DepositLogsID()) {
+			root, err := ethHandler.DepositRoot()
+			if err != nil {
+				log.WithError(err).Error("Could not respond to HTTP request")
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			response := requestItem.response(fmt.Sprintf("%#x", root))
+			codec.Write(ctx, response)
+		}
+		s.defaultResponse(w)
+	default:
+		s.defaultResponse(w)
 	}
+}
+
+func (s *server) defaultResponse(w http.ResponseWriter) {
+	log.Error("Could not respond to HTTP request")
+	w.WriteHeader(http.StatusBadRequest)
 }
 
 func (s *server) ServeWebsocket() http.Handler {
