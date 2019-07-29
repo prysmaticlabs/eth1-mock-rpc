@@ -14,7 +14,8 @@ import (
 // Handler provides methods for handling eth1 JSON-RPC requests using
 // mock or constructed data accordingly.
 type Handler struct {
-	Deposits []*DepositData
+	numGenesisDeposits int
+	Deposits           []*DepositData
 }
 
 // DepositRoot produces a hash tree root of a list of deposits
@@ -89,7 +90,7 @@ func (h *Handler) BlockHeaderByNumber() *types.Header {
 // for this information.
 func (h *Handler) DepositEventLogs() ([]types.Log, error) {
 	depositEventHash := hashutil.HashKeccak256(depositEventSignature)
-	logs := make([]types.Log, len(h.Deposits))
+	logs := make([]types.Log, len(h.numGenesisDeposits))
 	for i := 0; i < len(logs); i++ {
 		indexBuf := make([]byte, 8)
 		amountBuf := make([]byte, 8)

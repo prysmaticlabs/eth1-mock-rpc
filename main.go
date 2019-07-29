@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -29,12 +30,15 @@ var (
 	password              = flag.String("password", "", "Password to unlocking the validator keystore directory")
 	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
+	numGenesisDeposits    = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
 	log                   = logrus.WithField("prefix", "main")
 	persistedDepositsJSON = "deposits.json"
 )
 
 type server struct {
-	deposits []*eth1.DepositData
+	depositsLock           sync.Mutex
+	numDepositsReadyToSend int
+	deposits               []*eth1.DepositData
 }
 
 type websocketHandler struct {
@@ -50,14 +54,18 @@ func main() {
 	formatter.FullTimestamp = true
 	logrus.SetFormatter(formatter)
 
-	var deposits []*eth1.DepositData
+	if *numGenesisDeposits == 0 {
+		log.Fatal("Please enter a valid number of --genesis-deposits to read from the keystore")
+	}
+
+	var allDeposits []*eth1.DepositData
 	tmp := os.TempDir()
 	cachePath := path.Join(tmp, persistedDepositsJSON)
 	// We attempt to retrieve deposits from a local tmp file
 	// as an optimization to prevent reading and decrypting raw private keys
 	// from the validator keystore every single time the mock server is launched.
 	if r, err := os.Open(cachePath); err == nil {
-		deposits, err = retrieveDepositData(r)
+		allDeposits, err = retrieveDepositData(r)
 		if err != nil {
 			log.Fatalf("Could not retrieve deposits from %s: %v", cachePath, err)
 		}
@@ -65,7 +73,7 @@ func main() {
 		// If the file does not exist at the tmp directory, we decrypt
 		// from the keystore directory and then attempt to persist to the cache.
 		log.Infof("Decrypting private keys from %s, this may take a while...", *keystorePath)
-		deposits, err = createDepositDataFromKeystore(*keystorePath, *password)
+		allDeposits, err = createDepositDataFromKeystore(*keystorePath, *password)
 		if err != nil {
 			log.Fatalf("Could not create deposit data from keystore directory: %v", err)
 		}
@@ -73,14 +81,22 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := persistDepositData(w, deposits); err != nil {
+		if err := persistDepositData(w, allDeposits); err != nil {
 			log.Errorf("Could not persist deposits to disk: %v", err)
 		}
 	} else {
 		log.Fatalf("Could not read from %s: %v", cachePath, err)
 	}
+	log.Infof("Successfully loaded %d private keys from the keystore directory", len(allDeposits))
 
-	log.Infof("Successfully loaded %d deposits from the keystore directory", len(deposits))
+	if *numGenesisDeposits > len(allDeposits) {
+		log.Fatalf(
+			"Number of --genesis-deposits %d > number of deposits found in keystore directory %d",
+			*numGenesisDeposits,
+			allDeposits,
+		)
+	}
+
 	httpListener, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", *httpPort))
 	if err != nil {
 		panic(err)
@@ -90,7 +106,8 @@ func main() {
 		panic(err)
 	}
 	srv := &server{
-		deposits: deposits,
+		numDepositsReadyToSend: *numGenesisDeposits,
+		deposits:               allDeposits,
 	}
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
@@ -98,6 +115,8 @@ func main() {
 	log.Println("Starting WebSocket listener on port :7778")
 	wsSrv := &http.Server{Handler: srv.ServeWebsocket()}
 	go wsSrv.Serve(wsListener)
+
+	go srv.listenForDepositTrigger()
 
 	select {}
 }
@@ -122,6 +141,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	log.WithField("method", requestItem.Method).Info("Received HTTP-RPC request")
 	log.Infof("%v", requestItem)
+
 	ethHandler := &eth1.Handler{
 		Deposits: s.deposits,
 	}
@@ -142,7 +162,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		response := requestItem.response(logs)
+		s.depositsLock.Lock()
+		response := requestItem.response(logs[:s.numDepositsReadyToSend])
+		s.depositsLock.Unlock()
 		codec.Write(ctx, response)
 	default:
 		// TODO: handle this by method name and use default for unknown cases.
@@ -228,6 +250,22 @@ func (w *websocketHandler) websocketReadLoop(codec ServerCodec) {
 				return
 			}
 			w.readOperation <- msgs
+		}
+	}
+}
+
+func (s *server) listenForDepositTrigger() {
+	t := time.NewTicker(time.Second * 10)
+	for {
+		select {
+		case <-t.C:
+			s.depositsLock.Lock()
+			if s.numDepositsReadyToSend+1 > len(s.deposits) {
+				log.Errorf("Cannot send more deposits than available in keystore: %d", len(s.deposits))
+				continue
+			}
+			log.Info("New deposit trigger event")
+			s.depositsLock.Unlock()
 		}
 	}
 }
