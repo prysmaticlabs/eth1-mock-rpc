@@ -14,7 +14,6 @@ import (
 // Handler provides methods for handling eth1 JSON-RPC requests using
 // mock or constructed data accordingly.
 type Handler struct {
-	numGenesisDeposits int
 	Deposits           []*DepositData
 }
 
@@ -88,19 +87,19 @@ func (h *Handler) BlockHeaderByNumber() *types.Header {
 // at a deposit contract address. This uses an internal list of deposit data
 // to return instead of relying on a real network and parsing a real deposit contract
 // for this information.
-func (h *Handler) DepositEventLogs() ([]types.Log, error) {
+func DepositEventLogs(deposits []*DepositData) ([]types.Log, error) {
 	depositEventHash := hashutil.HashKeccak256(depositEventSignature)
-	logs := make([]types.Log, len(h.numGenesisDeposits))
+	logs := make([]types.Log, len(deposits))
 	for i := 0; i < len(logs); i++ {
 		indexBuf := make([]byte, 8)
 		amountBuf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(amountBuf, h.Deposits[i].Amount)
+		binary.LittleEndian.PutUint64(amountBuf, deposits[i].Amount)
 		binary.LittleEndian.PutUint64(indexBuf, uint64(i))
 		depositLog, err := packDepositLog(
-			h.Deposits[i].Pubkey,
-			h.Deposits[i].WithdrawalCredentials,
+			deposits[i].Pubkey,
+			deposits[i].WithdrawalCredentials,
 			amountBuf,
-			h.Deposits[i].Signature,
+			deposits[i].Signature,
 			indexBuf,
 		)
 		if err != nil {
