@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
+	"github.com/pkg/profile"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"golang.org/x/net/websocket"
@@ -130,6 +131,9 @@ func main() {
 		eth1Logs:               logs,
 		genesisTime:            uint64(time.Now().Add(10 * time.Second).Unix()),
 	}
+
+	defer profile.Start(profile.MemProfile).Stop()
+
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
 

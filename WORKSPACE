@@ -182,6 +182,12 @@ go_repository(
     importpath = "github.com/deckarep/golang-set",
 )
 
+go_repository(
+    name = "com_github_pkg_profile",
+    commit = "f6fe06335df110bcf1ed6d4e852b760bfc15beee",
+    importpath = "github.com/pkg/profile",
+)
+
 load("@com_github_prysmaticlabs_go_ssz//:deps.bzl", "go_ssz_dependencies")
 
 go_ssz_dependencies()
