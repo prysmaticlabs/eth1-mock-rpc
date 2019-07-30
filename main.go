@@ -39,6 +39,7 @@ var (
 	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
 	numGenesisDeposits    = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
 	verbosity             = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
+	tracing             = flag.Bool("pprof", false, "Enable pprof tracing")
 	log                   = logrus.WithField("prefix", "main")
 	persistedDepositsJSON = "deposits.json"
 )
@@ -146,7 +147,9 @@ func main() {
 		genesisTime:            uint64(time.Now().Add(10 * time.Second).Unix()),
 	}
 
-	defer profile.Start(profile.MemProfile).Stop()
+	if *tracing {
+		defer profile.Start().Stop()
+	}
 
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
