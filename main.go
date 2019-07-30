@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +36,7 @@ var (
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
 	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
 	numGenesisDeposits    = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
+	verbosity             = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
 	log                   = logrus.WithField("prefix", "main")
 	persistedDepositsJSON = "deposits.json"
 )
@@ -44,9 +46,11 @@ type server struct {
 	numDepositsReadyToSend int
 	deposits               []*eth1.DepositData
 	eth1Logs               []types.Log
+	genesisTime            uint64
 }
 
 type websocketHandler struct {
+	blockNum      uint64
 	close         chan bool
 	readOperation chan []*jsonrpcMessage // Channel for read messages from the codec.
 	readErr       chan error
@@ -58,6 +62,11 @@ func main() {
 	formatter.TimestampFormat = "2006-01-02 15:04:05"
 	formatter.FullTimestamp = true
 	logrus.SetFormatter(formatter)
+	level, err := logrus.ParseLevel(*verbosity)
+	if err != nil {
+		log.Fatal(err)
+	}
+	logrus.SetLevel(level)
 
 	if *numGenesisDeposits == 0 {
 		log.Fatal("Please enter a valid number of --genesis-deposits to read from the keystore")
@@ -119,6 +128,7 @@ func main() {
 		numDepositsReadyToSend: *numGenesisDeposits,
 		deposits:               allDeposits,
 		eth1Logs:               logs,
+		genesisTime:            uint64(time.Now().Add(10 * time.Second).Unix()),
 	}
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
@@ -150,36 +160,69 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	log.WithField("method", requestItem.Method).Info("Received HTTP-RPC request")
-	log.Infof("%v", requestItem)
+	log.WithField("method", requestItem.Method).Debug("Received HTTP-RPC request")
+	log.Debugf("%v", requestItem)
 
+	stringRep := requestItem.String()
 	switch requestItem.Method {
 	case "eth_getBlockByNumber":
 		block := eth1.BlockHeaderByNumber()
 		response := requestItem.response(block)
-		codec.Write(ctx, response)
-	case "eth_getBlockByHash":
-		block := eth1.BlockHeaderByHash()
-		response := requestItem.response(block)
-		codec.Write(ctx, response)
-	case "eth_getLogs":
-		s.depositsLock.Lock()
-		response := requestItem.response(s.eth1Logs[:s.numDepositsReadyToSend])
-		s.depositsLock.Unlock()
-		codec.Write(ctx, response)
-	default:
-		// TODO: handle this by method name and use default for unknown cases.
-		s.depositsLock.Lock()
-		root, err := eth1.DepositRoot(s.deposits[:s.numDepositsReadyToSend])
-		if err != nil {
-			log.WithError(err).Error("Could not respond to HTTP request")
+		if err := codec.Write(ctx, response); err != nil {
+			log.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
+		}
+	case "eth_getBlockByHash":
+		block := eth1.BlockHeaderByHash(s.genesisTime)
+		response := requestItem.response(block)
+		if err := codec.Write(ctx, response); err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	case "eth_getLogs":
+		response := requestItem.response(s.eth1Logs[:s.numDepositsReadyToSend])
+		if err := codec.Write(ctx, response); err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	case "eth_call":
+		if strings.Contains(stringRep, eth1.DepositMethodID()) {
+			count := eth1.DepositCount(s.deposits[:s.numDepositsReadyToSend])
+			depCount, err := eth1.PackDepositCount(count[:])
+			if err != nil {
+				log.WithError(err).Error("Could not respond to HTTP request")
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			response := requestItem.response(fmt.Sprintf("%#x", depCount))
+			if err := codec.Write(ctx, response); err != nil {
+				log.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 			return
 		}
-		s.depositsLock.Unlock()
-		response := requestItem.response(fmt.Sprintf("%#x", root))
-		codec.Write(ctx, response)
+		if strings.Contains(stringRep, eth1.DepositLogsID()) {
+			root, err := eth1.DepositRoot(s.deposits[:s.numDepositsReadyToSend])
+			if err != nil {
+				log.WithError(err).Error("Could not respond to HTTP request")
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			response := requestItem.response(fmt.Sprintf("%#x", root))
+			if err := codec.Write(ctx, response); err != nil {
+				log.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			return
+		}
+		s.defaultResponse(w)
+	default:
+		s.defaultResponse(w)
 	}
+}
+
+func (s *server) defaultResponse(w http.ResponseWriter) {
+	log.Error("Could not respond to HTTP request")
+	w.WriteHeader(http.StatusBadRequest)
 }
 
 func (s *server) ServeWebsocket() http.Handler {
@@ -187,6 +230,7 @@ func (s *server) ServeWebsocket() http.Handler {
 		Handler: func(conn *websocket.Conn) {
 			codec := newWebsocketCodec(conn)
 			wsHandler := &websocketHandler{
+				blockNum:      0,
 				close:         make(chan bool),
 				readOperation: make(chan []*jsonrpcMessage),
 				readErr:       make(chan error),
@@ -212,7 +256,7 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 			log.WithError(err).Error("Could not read data from request")
 			return
 		case <-tick.C:
-			head := eth1.LatestChainHead()
+			head := eth1.LatestChainHead(w.blockNum)
 			data, _ := json.Marshal(head)
 			params, _ := json.Marshal(&subscriptionResult{ID: string(latestSubID), Result: data})
 			ctx := context.Background()
@@ -221,7 +265,11 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 				Method:  "eth_subscription",
 				Params:  params,
 			}
-			codec.Write(ctx, item)
+			if err := codec.Write(ctx, item); err != nil {
+				log.Error(err)
+				continue
+			}
+			w.blockNum++
 		case msgs := <-w.readOperation:
 			sub := &rpc.Subscription{ID: rpc.NewID()}
 			item := &jsonrpcMessage{
@@ -230,7 +278,10 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 			}
 			latestSubID = sub.ID
 			newItem := item.response(sub)
-			codec.Write(context.Background(), newItem)
+			if err := codec.Write(context.Background(), newItem); err != nil {
+				log.Error(err)
+				continue
+			}
 		}
 	}
 }
@@ -243,7 +294,10 @@ func (w *websocketHandler) websocketReadLoop(codec ServerCodec) {
 		default:
 			msgs, _, err := codec.Read()
 			if _, ok := err.(*json.SyntaxError); ok {
-				codec.Write(context.Background(), errorMessage(err))
+				if err := codec.Write(context.Background(), errorMessage(err)); err != nil {
+					log.Error(err)
+					continue
+				}
 			}
 			if err != nil {
 				w.readErr <- err
@@ -259,7 +313,7 @@ func (s *server) listenForDepositTrigger() {
 	for {
 		maxAllowed := len(s.deposits) - s.numDepositsReadyToSend
 		log.Printf(
-			"Enter the number of new eth2 to trigger below (max %d): ",
+			"Enter the number of new eth2 deposits to trigger (max allowed %d): ",
 			maxAllowed,
 		)
 		fmt.Print(">> ")
@@ -278,6 +332,8 @@ func (s *server) listenForDepositTrigger() {
 				len(s.deposits),
 				s.numDepositsReadyToSend,
 			)
+			continue
 		}
+		s.numDepositsReadyToSend += num
 	}
 }

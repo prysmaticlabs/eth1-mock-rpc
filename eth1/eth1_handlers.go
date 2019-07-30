@@ -17,8 +17,30 @@ func DepositRoot(deposits []*DepositData) ([32]byte, error) {
 	return ssz.HashTreeRootWithCapacity(deposits, 1<<depositContractTreeDepth)
 }
 
+// DepositMethodID returns the ABI encoded method value as a hex string.
+func DepositMethodID() string {
+	methodHash := hashutil.HashKeccak256([]byte("get_deposit_count()"))
+	return "data\":\"0x" + common.Bytes2Hex(methodHash[:4]) + "\""
+}
+
+// DepositLogsID returns the event hash from the ABI corresponding to
+// fetching the deposit logs event.
+func DepositLogsID() string {
+	// TODO():Find the proper way to retrieve the hash
+	eventHash := "863a311b"
+	return "data\":\"0x" + eventHash + "\""
+}
+
+// DepositCount returns an encoded number of deposits.
+func DepositCount(deposits []*DepositData) [8]byte {
+	count := uint64(len(deposits))
+	var depCount [8]byte
+	binary.LittleEndian.PutUint64(depCount[:], count)
+	return depCount
+}
+
 // LatestChainHead returns the latest eth1 chain into a channel.
-func LatestChainHead() *types.Header {
+func LatestChainHead(blockNum uint64) *types.Header {
 	head := &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -28,18 +50,17 @@ func LatestChainHead() *types.Header {
 		ReceiptHash: common.Hash([32]byte{}),
 		Bloom:       types.Bloom{},
 		Difficulty:  big.NewInt(20),
-		Number:      big.NewInt(int64(100)),
+		Number:      big.NewInt(int64(blockNum)),
 		GasLimit:    100,
 		GasUsed:     100,
-		Time:        1578009600,
+		Time:        uint64(time.Now().Unix()),
 		Extra:       []byte("hello world"),
 	}
 	return head
 }
 
 // BlockHeaderByHash returns a block header given a raw hash.
-func BlockHeaderByHash() *types.Header {
-	t := time.Now().Unix()
+func BlockHeaderByHash(genesisTime uint64) *types.Header {
 	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -52,7 +73,7 @@ func BlockHeaderByHash() *types.Header {
 		Number:      big.NewInt(int64(100)),
 		GasLimit:    100,
 		GasUsed:     100,
-		Time:        uint64(t),
+		Time:        genesisTime,
 		Extra:       []byte("hello world"),
 	}
 }
