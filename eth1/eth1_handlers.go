@@ -3,6 +3,7 @@ package eth1
 import (
 	"encoding/binary"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -10,42 +11,36 @@ import (
 	"github.com/prysmaticlabs/prysm/shared/hashutil"
 )
 
-// Handler provides methods for handling eth1 JSON-RPC requests using
-// mock or constructed data accordingly.
-type Handler struct {
-	Deposits    []*DepositData
-	GenesisTime uint64
-}
-
 // DepositRoot produces a hash tree root of a list of deposits
 // to match the output of the deposit contract on the eth1 chain.
-func (h *Handler) DepositRoot() ([32]byte, error) {
-	return ssz.HashTreeRootWithCapacity(h.Deposits, 1<<depositContractTreeDepth)
+func DepositRoot(deposits []*DepositData) ([32]byte, error) {
+	return ssz.HashTreeRootWithCapacity(deposits, 1<<depositContractTreeDepth)
 }
 
-func (h *Handler) DepositMethodID() string {
+// DepositMethodID returns the ABI encoded method value as a hex string.
+func DepositMethodID() string {
 	methodHash := hashutil.HashKeccak256([]byte("get_deposit_count()"))
-	dataField := "data\":\"0x" + common.Bytes2Hex(methodHash[:4]) + "\""
-	return dataField
+	return "data\":\"0x" + common.Bytes2Hex(methodHash[:4]) + "\""
 }
 
-func (h *Handler) DepositLogsID() string {
+// DepositLogsID returns the event hash from the ABI corresponding to
+// fetching the deposit logs event.
+func DepositLogsID() string {
 	// TODO():Find the proper way to retrieve the hash
 	eventHash := "863a311b"
-	dataField := "data\":\"0x" + eventHash + "\""
-	return dataField
+	return "data\":\"0x" + eventHash + "\""
 }
 
-func (h *Handler) DepositCount() [8]byte {
-	count := uint64(len(h.Deposits))
+// DepositCount returns an encoded number of deposits.
+func DepositCount(deposits []*DepositData) [8]byte {
+	count := uint64(len(deposits))
 	var depCount [8]byte
 	binary.LittleEndian.PutUint64(depCount[:], count)
 	return depCount
 }
 
 // LatestChainHead returns the latest eth1 chain into a channel.
-// TODO: Convert into a channel push.
-func (h *Handler) LatestChainHead() *types.Header {
+func LatestChainHead(blockNum uint64) *types.Header {
 	head := &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -55,17 +50,17 @@ func (h *Handler) LatestChainHead() *types.Header {
 		ReceiptHash: common.Hash([32]byte{}),
 		Bloom:       types.Bloom{},
 		Difficulty:  big.NewInt(20),
-		Number:      big.NewInt(int64(100)),
+		Number:      big.NewInt(int64(blockNum)),
 		GasLimit:    100,
 		GasUsed:     100,
-		Time:        1578009600,
+		Time:        uint64(time.Now().Unix()),
 		Extra:       []byte("hello world"),
 	}
 	return head
 }
 
 // BlockHeaderByHash returns a block header given a raw hash.
-func (h *Handler) BlockHeaderByHash() *types.Header {
+func BlockHeaderByHash(genesisTime uint64) *types.Header {
 	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -78,13 +73,13 @@ func (h *Handler) BlockHeaderByHash() *types.Header {
 		Number:      big.NewInt(int64(100)),
 		GasLimit:    100,
 		GasUsed:     100,
-		Time:        uint64(h.GenesisTime),
+		Time:        genesisTime,
 		Extra:       []byte("hello world"),
 	}
 }
 
 // BlockHeaderByNumber returns a block header given a block height.
-func (h *Handler) BlockHeaderByNumber() *types.Header {
+func BlockHeaderByNumber() *types.Header {
 	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -106,19 +101,19 @@ func (h *Handler) BlockHeaderByNumber() *types.Header {
 // at a deposit contract address. This uses an internal list of deposit data
 // to return instead of relying on a real network and parsing a real deposit contract
 // for this information.
-func (h *Handler) DepositEventLogs() ([]types.Log, error) {
+func DepositEventLogs(deposits []*DepositData) ([]types.Log, error) {
 	depositEventHash := hashutil.HashKeccak256(depositEventSignature)
-	logs := make([]types.Log, len(h.Deposits))
+	logs := make([]types.Log, len(deposits))
 	for i := 0; i < len(logs); i++ {
 		indexBuf := make([]byte, 8)
 		amountBuf := make([]byte, 8)
-		binary.LittleEndian.PutUint64(amountBuf, h.Deposits[i].Amount)
+		binary.LittleEndian.PutUint64(amountBuf, deposits[i].Amount)
 		binary.LittleEndian.PutUint64(indexBuf, uint64(i))
 		depositLog, err := packDepositLog(
-			h.Deposits[i].Pubkey,
-			h.Deposits[i].WithdrawalCredentials,
+			deposits[i].Pubkey,
+			deposits[i].WithdrawalCredentials,
 			amountBuf,
-			h.Deposits[i].Signature,
+			deposits[i].Signature,
 			indexBuf,
 		)
 		if err != nil {
