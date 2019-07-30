@@ -3,7 +3,6 @@ package eth1
 import (
 	"encoding/binary"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -14,13 +13,34 @@ import (
 // Handler provides methods for handling eth1 JSON-RPC requests using
 // mock or constructed data accordingly.
 type Handler struct {
-	Deposits []*DepositData
+	Deposits    []*DepositData
+	GenesisTime uint64
 }
 
 // DepositRoot produces a hash tree root of a list of deposits
 // to match the output of the deposit contract on the eth1 chain.
 func (h *Handler) DepositRoot() ([32]byte, error) {
 	return ssz.HashTreeRootWithCapacity(h.Deposits, 1<<depositContractTreeDepth)
+}
+
+func (h *Handler) DepositMethodID() string {
+	methodHash := hashutil.HashKeccak256([]byte("get_deposit_count()"))
+	dataField := "data\":\"0x" + common.Bytes2Hex(methodHash[:4]) + "\""
+	return dataField
+}
+
+func (h *Handler) DepositLogsID() string {
+	// TODO():Find the proper way to retrieve the hash
+	eventHash := "863a311b"
+	dataField := "data\":\"0x" + eventHash + "\""
+	return dataField
+}
+
+func (h *Handler) DepositCount() [8]byte {
+	count := uint64(len(h.Deposits))
+	var depCount [8]byte
+	binary.LittleEndian.PutUint64(depCount[:], count)
+	return depCount
 }
 
 // LatestChainHead returns the latest eth1 chain into a channel.
@@ -46,7 +66,6 @@ func (h *Handler) LatestChainHead() *types.Header {
 
 // BlockHeaderByHash returns a block header given a raw hash.
 func (h *Handler) BlockHeaderByHash() *types.Header {
-	t := time.Now().Unix()
 	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -59,7 +78,7 @@ func (h *Handler) BlockHeaderByHash() *types.Header {
 		Number:      big.NewInt(int64(100)),
 		GasLimit:    100,
 		GasUsed:     100,
-		Time:        uint64(t),
+		Time:        uint64(h.GenesisTime),
 		Extra:       []byte("hello world"),
 	}
 }

@@ -25,3 +25,12 @@ func packDepositLog(
 	}
 	return contractAbi.Events["DepositEvent"].Inputs.Pack(pubkey, withdrawalCredentials, amount, signature, index)
 }
+
+func PackDepositCount(count []byte) ([]byte, error) {
+	reader := bytes.NewReader([]byte(depositContractABI))
+	contractAbi, err := abi.JSON(reader)
+	if err != nil {
+		return nil, err
+	}
+	return contractAbi.Methods["get_deposit_count"].Outputs.Pack(count)
+}
