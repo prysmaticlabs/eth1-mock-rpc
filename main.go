@@ -17,9 +17,10 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/pkg/profile"
+	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 	"golang.org/x/net/websocket"
@@ -32,7 +33,7 @@ const (
 
 var (
 	keystoreDirs          = flag.String("keystore-dirs", "", "List of comma-separated paths to validator keystore directories")
-	keystorePasswords              = flag.String("keystore-passwords", "", "Comma-separated list of text passwords to unlocking the validator keystores")
+	keystorePasswords     = flag.String("keystore-passwords", "", "Comma-separated list of text passwords to unlocking the validator keystores")
 	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
 	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
@@ -47,6 +48,8 @@ type server struct {
 	numDepositsReadyToSend int
 	deposits               []*eth1.DepositData
 	eth1Logs               []types.Log
+	eth1BlockNum           uint64
+	eth1HeadFeed           *event.Feed
 	genesisTime            uint64
 }
 
@@ -112,7 +115,7 @@ func main() {
 	} else {
 		log.Fatalf("Could not read from %s: %v", cachePath, err)
 	}
-	log.Infof("Successfully loaded %d private keys from the keystore directory", len(allDeposits))
+	log.Infof("Successfully loaded %d private keys from the keystore directories", len(allDeposits))
 
 	if *numGenesisDeposits > len(allDeposits) {
 		log.Fatalf(
@@ -138,6 +141,8 @@ func main() {
 		numDepositsReadyToSend: *numGenesisDeposits,
 		deposits:               allDeposits,
 		eth1Logs:               logs,
+		eth1BlockNum:           0,
+		eth1HeadFeed:           new(event.Feed),
 		genesisTime:            uint64(time.Now().Add(10 * time.Second).Unix()),
 	}
 
@@ -151,6 +156,8 @@ func main() {
 	go wsSrv.Serve(wsListener)
 
 	go srv.listenForDepositTrigger()
+
+	go srv.advanceEth1Chain()
 
 	select {}
 }
@@ -252,15 +259,17 @@ func (s *server) ServeWebsocket() http.Handler {
 			defer codec.Close()
 			// Listen to read events from the codec and dispatch events or errors accordingly.
 			go wsHandler.websocketReadLoop(codec)
-			go wsHandler.dispatchWebsocketEventLoop(codec)
+			go wsHandler.dispatchWebsocketEventLoop(codec, s.eth1HeadFeed)
 			<-codec.Closed()
 		},
 	}
 }
 
-func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
-	tick := time.NewTicker(time.Second * 10)
+func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec, headFeed *event.Feed) {
 	var latestSubID rpc.ID
+	headChan := make(chan *types.Header, 1)
+	sub := headFeed.Subscribe(headChan)
+	defer sub.Unsubscribe()
 	for {
 		select {
 		case <-w.close:
@@ -268,8 +277,7 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 		case err := <-w.readErr:
 			log.WithError(err).Error("Could not read data from request")
 			return
-		case <-tick.C:
-			head := eth1.LatestChainHead(w.blockNum)
+		case head := <-headChan:
 			data, _ := json.Marshal(head)
 			params, _ := json.Marshal(&subscriptionResult{ID: string(latestSubID), Result: data})
 			ctx := context.Background()
@@ -282,7 +290,6 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 				log.Error(err)
 				continue
 			}
-			w.blockNum++
 		case msgs := <-w.readOperation:
 			sub := &rpc.Subscription{ID: rpc.NewID()}
 			item := &jsonrpcMessage{
@@ -348,5 +355,17 @@ func (s *server) listenForDepositTrigger() {
 			continue
 		}
 		s.numDepositsReadyToSend += num
+	}
+}
+
+func (s *server) advanceEth1Chain() {
+	tick := time.NewTicker(time.Second * 10)
+	for {
+		select {
+		case <-tick.C:
+			head := eth1.LatestChainHead(s.eth1BlockNum)
+			s.eth1BlockNum++
+			s.eth1HeadFeed.Send(head)
+		}
 	}
 }
