@@ -11,11 +11,12 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
@@ -41,7 +42,7 @@ type server struct {
 	depositsLock           sync.Mutex
 	numDepositsReadyToSend int
 	deposits               []*eth1.DepositData
-	eth1Logs []types.Log
+	eth1Logs               []types.Log
 }
 
 type websocketHandler struct {
@@ -102,7 +103,7 @@ func main() {
 
 	httpListener, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", *httpPort))
 	if err != nil {
-        log.Fatal(err)
+		log.Fatal(err)
 	}
 	wsListener, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", *wsPort))
 	if err != nil {
@@ -115,7 +116,7 @@ func main() {
 	srv := &server{
 		numDepositsReadyToSend: *numGenesisDeposits,
 		deposits:               allDeposits,
-		eth1Logs: logs,
+		eth1Logs:               logs,
 	}
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
@@ -254,15 +255,27 @@ func (w *websocketHandler) websocketReadLoop(codec ServerCodec) {
 func (s *server) listenForDepositTrigger() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
+		maxAllowed := len(s.deposits) - s.numDepositsReadyToSend
 		log.Printf(
-			">> Enter the number of new eth2 to trigger below (max %d): ",
-			len(s.deposits)-s.numDepositsReadyToSend,
+			"Enter the number of new eth2 to trigger below (max %d): ",
+			maxAllowed,
 		)
+		fmt.Print(">> ")
 		line, _, err := reader.ReadLine()
 		if err != nil {
-            log.Error(err)
-            continue
+			log.Error(err)
+			continue
 		}
-		log.Info(string(line))
+		num, err := strconv.Atoi(string(line))
+		if err != nil {
+			log.Error(err)
+		}
+		if num > maxAllowed {
+			log.Errorf(
+				"You have already sent %d/%d available deposits in keystore, cannot submit more",
+				len(s.deposits),
+				s.numDepositsReadyToSend,
+			)
+		}
 	}
 }
