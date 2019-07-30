@@ -31,8 +31,8 @@ const (
 )
 
 var (
-	keystorePath          = flag.String("keystore-path", "", "Path to a validator keystore directory")
-	password              = flag.String("password", "", "Password to unlocking the validator keystore directory")
+	keystoreDirs          = flag.String("keystore-dirs", "", "List of comma-separated paths to validator keystore directories")
+	keystorePasswords              = flag.String("keystore-passwords", "", "Comma-separated list of text passwords to unlocking the validator keystores")
 	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
 	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
@@ -77,6 +77,12 @@ func main() {
 	tmp := os.TempDir()
 	cachePath := path.Join(tmp, persistedDepositsJSON)
 	recalculate := *invalidateCache
+	dirs := strings.Split(*keystoreDirs, ",")
+	passwords := strings.Split(*keystorePasswords, ",")
+	if len(dirs) != len(passwords) {
+		log.Fatal("Need to have the same number of keystore paths and passwords")
+	}
+
 	// We attempt to retrieve deposits from a local tmp file
 	// as an optimization to prevent reading and decrypting raw private keys
 	// from the validator keystore every single time the mock server is launched.
@@ -88,10 +94,13 @@ func main() {
 	} else if recalculate || os.IsNotExist(err) {
 		// If the file does not exist at the tmp directory, we decrypt
 		// from the keystore directory and then attempt to persist to the cache.
-		log.Infof("Decrypting private keys from %s, this may take a while...", *keystorePath)
-		allDeposits, err = createDepositDataFromKeystore(*keystorePath, *password)
-		if err != nil {
-			log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+		for i := 0; i < len(dirs); i++ {
+			log.Infof("Decrypting private keys from %s, this may take a while...", dirs[i])
+			dps, err := createDepositDataFromKeystore(dirs[i], passwords[i])
+			if err != nil {
+				log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+			}
+			allDeposits = append(allDeposits, dps)
 		}
 		w, err := os.Create(cachePath)
 		if err != nil {
