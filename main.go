@@ -33,6 +33,7 @@ var (
 	password              = flag.String("password", "", "Password to unlocking the validator keystore directory")
 	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
+	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
 	numGenesisDeposits    = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
 	log                   = logrus.WithField("prefix", "main")
 	persistedDepositsJSON = "deposits.json"
@@ -65,15 +66,16 @@ func main() {
 	var allDeposits []*eth1.DepositData
 	tmp := os.TempDir()
 	cachePath := path.Join(tmp, persistedDepositsJSON)
+	recalculate := *invalidateCache
 	// We attempt to retrieve deposits from a local tmp file
 	// as an optimization to prevent reading and decrypting raw private keys
 	// from the validator keystore every single time the mock server is launched.
-	if r, err := os.Open(cachePath); err == nil {
+	if r, err := os.Open(cachePath); !recalculate && err == nil {
 		allDeposits, err = retrieveDepositData(r)
 		if err != nil {
 			log.Fatalf("Could not retrieve deposits from %s: %v", cachePath, err)
 		}
-	} else if os.IsNotExist(err) {
+	} else if recalculate || os.IsNotExist(err) {
 		// If the file does not exist at the tmp directory, we decrypt
 		// from the keystore directory and then attempt to persist to the cache.
 		log.Infof("Decrypting private keys from %s, this may take a while...", *keystorePath)
