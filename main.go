@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,11 +12,14 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -29,6 +33,7 @@ import (
 const (
 	maxRequestContentLength = 1024 * 512
 	defaultErrorCode        = -32000
+	eth1BlockTime           = time.Second * 10
 )
 
 var (
@@ -39,7 +44,7 @@ var (
 	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
 	numGenesisDeposits    = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
 	verbosity             = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
-	tracing               = flag.Bool("pprof", false, "Enable pprof tracing")
+	pprof                 = flag.Bool("pprof", false, "Enable pprof")
 	log                   = logrus.WithField("prefix", "main")
 	persistedDepositsJSON = "deposits.json"
 )
@@ -48,6 +53,8 @@ type server struct {
 	depositsLock           sync.Mutex
 	numDepositsReadyToSend int
 	deposits               []*eth1.DepositData
+	eth1BlocksByNumber     map[uint64]*types.Header
+	eth1BlockNumbersByHash map[common.Hash]uint64
 	eth1Logs               []types.Log
 	eth1BlockNum           uint64
 	eth1HeadFeed           *event.Feed
@@ -134,20 +141,39 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// We also compute a history of eth1 blocks to be used to respond to RPC requests for
+	// blocks by number, getting our mock server to closely resemble a real chain.
+	currentBlockNumber := uint64(2000)
+	blocksByNumber := eth1.ConstructBlocksByNumber(currentBlockNumber, eth1BlockTime)
+	blockNumbersByHash := make(map[common.Hash]uint64)
+	for k, v := range blocksByNumber {
+		h := v.Hash()
+		blockNumbersByHash[h] = k
+	}
+
+	// We precalculate a list of deposit logs from the entire in-memory deposits list.
 	logs, err := eth1.DepositEventLogs(allDeposits)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	for i := 0; i < *numGenesisDeposits; i++ {
+		logs[i].BlockHash = blocksByNumber[currentBlockNumber].Hash()
+	}
+
 	srv := &server{
 		numDepositsReadyToSend: *numGenesisDeposits,
 		deposits:               allDeposits,
 		eth1Logs:               logs,
-		eth1BlockNum:           0,
+		eth1BlockNum:           currentBlockNumber,
+		eth1BlockNumbersByHash: blockNumbersByHash,
+		eth1BlocksByNumber:     blocksByNumber,
 		eth1HeadFeed:           new(event.Feed),
 		genesisTime:            uint64(time.Now().Add(10 * time.Second).Unix()),
 	}
 
-	if *tracing {
+	if *pprof {
 		defer profile.Start().Stop()
 	}
 
@@ -189,14 +215,55 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stringRep := requestItem.String()
 	switch requestItem.Method {
 	case "eth_getBlockByNumber":
-		block := eth1.BlockHeaderByNumber()
+		typs := []reflect.Type{
+			reflect.TypeOf("s"),
+			reflect.TypeOf(true),
+		}
+		args, err := parsePositionalArguments(requestItem.Params, typs)
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		log.Infof("Block by number %v", args)
+
+		var block *types.Header
+		if args[0].String() == "latest" {
+			block = s.eth1BlocksByNumber[s.eth1BlockNum]
+		} else {
+			num, err := hexutil.DecodeBig(args[0].String())
+			if err != nil {
+				log.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			block = s.eth1BlocksByNumber[num.Uint64()]
+		}
+
 		response := requestItem.response(block)
 		if err := codec.Write(ctx, response); err != nil {
 			log.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	case "eth_getBlockByHash":
-		block := eth1.BlockHeaderByHash(s.genesisTime)
+		typs := []reflect.Type{
+			reflect.TypeOf("s"),
+			reflect.TypeOf(true),
+		}
+		args, err := parsePositionalArguments(requestItem.Params, typs)
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		h := args[0].String()
+		// Strip out the 0x prefix.
+		blockHashBytes, err := hex.DecodeString(h[2:])
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		var blockHash [32]byte
+		copy(blockHash[:], blockHashBytes)
+		numByHash := s.eth1BlockNumbersByHash[blockHash]
+		block := s.eth1BlocksByNumber[numByHash]
 		response := requestItem.response(block)
 		if err := codec.Write(ctx, response); err != nil {
 			log.Error(err)
@@ -358,6 +425,9 @@ func (s *server) listenForDepositTrigger() {
 			continue
 		}
 		s.numDepositsReadyToSend += num
+		for i := 0; i < s.numDepositsReadyToSend; i++ {
+			s.eth1Logs[i].BlockHash = s.eth1BlocksByNumber[s.eth1BlockNum].Hash()
+		}
 	}
 }
 
@@ -366,8 +436,10 @@ func (s *server) advanceEth1Chain() {
 	for {
 		select {
 		case <-tick.C:
-			head := eth1.LatestChainHead(s.eth1BlockNum)
 			s.eth1BlockNum++
+			head := eth1.BlockHeader(s.eth1BlockNum)
+			s.eth1BlocksByNumber[s.eth1BlockNum] = head
+			s.eth1BlockNumbersByHash[head.Hash()] = s.eth1BlockNum
 			s.eth1HeadFeed.Send(head)
 		}
 	}
