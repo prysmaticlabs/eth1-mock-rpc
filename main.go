@@ -224,7 +224,6 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-		log.Infof("Block by number %v", args)
 
 		var block *types.Header
 		if args[0].String() == "latest" {
