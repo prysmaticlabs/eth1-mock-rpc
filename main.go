@@ -100,7 +100,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("Could not create deposit data from keystore directory: %v", err)
 			}
-			allDeposits = append(allDeposits, dps)
+			allDeposits = append(allDeposits, dps...)
 		}
 		w, err := os.Create(cachePath)
 		if err != nil {
