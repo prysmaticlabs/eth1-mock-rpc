@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -149,17 +150,13 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.WithField("method", requestItem.Method).Info("Received HTTP-RPC request")
 	log.Infof("%v", requestItem)
 
-	eth1Handler := &eth1.Handler{
-		Deposits: s.deposits,
-	}
-
 	switch requestItem.Method {
 	case "eth_getBlockByNumber":
-		block := eth1Handler.BlockHeaderByNumber()
+		block := eth1.BlockHeaderByNumber()
 		response := requestItem.response(block)
 		codec.Write(ctx, response)
 	case "eth_getBlockByHash":
-		block := eth1Handler.BlockHeaderByHash()
+		block := eth1.BlockHeaderByHash()
 		response := requestItem.response(block)
 		codec.Write(ctx, response)
 	case "eth_getLogs":
@@ -169,12 +166,14 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		codec.Write(ctx, response)
 	default:
 		// TODO: handle this by method name and use default for unknown cases.
-		root, err := eth1Handler.DepositRoot()
+		s.depositsLock.Lock()
+		root, err := eth1.DepositRoot(s.deposits[:s.numDepositsReadyToSend])
 		if err != nil {
 			log.WithError(err).Error("Could not respond to HTTP request")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		s.depositsLock.Unlock()
 		response := requestItem.response(fmt.Sprintf("%#x", root))
 		codec.Write(ctx, response)
 	}
@@ -193,14 +192,13 @@ func (s *server) ServeWebsocket() http.Handler {
 			defer codec.Close()
 			// Listen to read events from the codec and dispatch events or errors accordingly.
 			go wsHandler.websocketReadLoop(codec)
-			go wsHandler.dispatchWebsocketEventLoop(codec, s.deposits)
+			go wsHandler.dispatchWebsocketEventLoop(codec)
 			<-codec.Closed()
 		},
 	}
 }
 
 func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
-	eth := &eth1.Handler{}
 	tick := time.NewTicker(time.Second * 10)
 	var latestSubID rpc.ID
 	for {
@@ -211,7 +209,7 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 			log.WithError(err).Error("Could not read data from request")
 			return
 		case <-tick.C:
-			head := eth.LatestChainHead()
+			head := eth1.LatestChainHead()
 			data, _ := json.Marshal(head)
 			params, _ := json.Marshal(&subscriptionResult{ID: string(latestSubID), Result: data})
 			ctx := context.Background()
@@ -254,17 +252,17 @@ func (w *websocketHandler) websocketReadLoop(codec ServerCodec) {
 }
 
 func (s *server) listenForDepositTrigger() {
-	t := time.NewTicker(time.Second * 10)
+	reader := bufio.NewReader(os.Stdin)
 	for {
-		select {
-		case <-t.C:
-			s.depositsLock.Lock()
-			if s.numDepositsReadyToSend+1 > len(s.deposits) {
-				log.Errorf("Cannot send more deposits than available in keystore: %d", len(s.deposits))
-				continue
-			}
-			log.Info("New deposit trigger event")
-			s.depositsLock.Unlock()
+		log.Printf(
+			">> Enter the number of new eth2 to trigger below (max %d): ",
+			len(s.deposits)-s.numDepositsReadyToSend,
+		)
+		line, _, err := reader.ReadLine()
+		if err != nil {
+            log.Error(err)
+            continue
 		}
+		log.Info(string(line))
 	}
 }

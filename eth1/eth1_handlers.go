@@ -11,21 +11,14 @@ import (
 	"github.com/prysmaticlabs/prysm/shared/hashutil"
 )
 
-// Handler provides methods for handling eth1 JSON-RPC requests using
-// mock or constructed data accordingly.
-type Handler struct {
-	Deposits           []*DepositData
-}
-
 // DepositRoot produces a hash tree root of a list of deposits
 // to match the output of the deposit contract on the eth1 chain.
-func (h *Handler) DepositRoot() ([32]byte, error) {
-	return ssz.HashTreeRootWithCapacity(h.Deposits, 1<<depositContractTreeDepth)
+func DepositRoot(deposits []*DepositData) ([32]byte, error) {
+	return ssz.HashTreeRootWithCapacity(deposits, 1<<depositContractTreeDepth)
 }
 
 // LatestChainHead returns the latest eth1 chain into a channel.
-// TODO: Convert into a channel push.
-func (h *Handler) LatestChainHead() *types.Header {
+func LatestChainHead() *types.Header {
 	head := &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
@@ -45,7 +38,7 @@ func (h *Handler) LatestChainHead() *types.Header {
 }
 
 // BlockHeaderByHash returns a block header given a raw hash.
-func (h *Handler) BlockHeaderByHash() *types.Header {
+func BlockHeaderByHash() *types.Header {
 	t := time.Now().Unix()
 	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
@@ -65,7 +58,7 @@ func (h *Handler) BlockHeaderByHash() *types.Header {
 }
 
 // BlockHeaderByNumber returns a block header given a block height.
-func (h *Handler) BlockHeaderByNumber() *types.Header {
+func BlockHeaderByNumber() *types.Header {
 	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
