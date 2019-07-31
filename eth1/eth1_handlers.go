@@ -43,27 +43,25 @@ func DepositCount(deposits []*DepositData) [8]byte {
 // used to simulate a real eth1 chain which can be queried for all of its blocks by their respective number.
 func ConstructBlocksByNumber(currentBlockNum uint64, blockTime time.Duration) map[uint64]*types.Header {
 	m := make(map[uint64]*types.Header)
-	header := &types.Header{
-		ParentHash:  common.Hash([32]byte{}),
-		UncleHash:   types.EmptyUncleHash,
-		Coinbase:    common.Address([20]byte{}),
-		Root:        common.Hash([32]byte{}),
-		TxHash:      types.EmptyRootHash,
-		ReceiptHash: common.Hash([32]byte{}),
-		Bloom:       types.Bloom{},
-		Difficulty:  big.NewInt(20),
-		GasLimit:    100,
-		GasUsed:     100,
-		Extra:       []byte("hello world"),
-	}
-	currentTime := time.Now()
-	header.Time = uint64(currentTime.Unix())
-    header.Number = big.NewInt(int64(currentBlockNum))
-    m[currentBlockNum] = header
-	for i := currentBlockNum-1; i > 0; i-- {
-		header.Time = header.Time - uint64(blockTime.Seconds())
-		header.Number = big.NewInt(int64(i))
+	currentTime := uint64(time.Now().Unix())
+	for i := currentBlockNum; i > 0; i-- {
+		header := &types.Header{
+			ParentHash:  common.Hash([32]byte{}),
+			UncleHash:   types.EmptyUncleHash,
+			Coinbase:    common.Address([20]byte{}),
+			Root:        common.Hash([32]byte{}),
+			TxHash:      types.EmptyRootHash,
+			ReceiptHash: common.Hash([32]byte{}),
+			Bloom:       types.Bloom{},
+			Difficulty:  big.NewInt(20),
+			Number:      big.NewInt(int64(i)),
+			GasLimit:    100,
+			GasUsed:     100,
+			Time:        currentTime,
+			Extra:       []byte("hello world"),
+		}
 		m[i] = header
+		currentTime = currentTime - uint64(blockTime.Seconds())
 	}
 	return m
 }
@@ -110,12 +108,12 @@ func DepositEventLogs(deposits []*DepositData) ([]types.Log, error) {
 			return nil, nil
 		}
 		logs[i] = types.Log{
-			Address:   common.Address([20]byte{}),
-			Topics:    []common.Hash{depositEventHash},
-			Data:      depositLog,
-			TxHash:    common.Hash([32]byte{}),
-			TxIndex:   100,
-			Index:     10,
+			Address: common.Address([20]byte{}),
+			Topics:  []common.Hash{depositEventHash},
+			Data:    depositLog,
+			TxHash:  common.Hash([32]byte{}),
+			TxIndex: 100,
+			Index:   10,
 		}
 	}
 	return logs, nil
