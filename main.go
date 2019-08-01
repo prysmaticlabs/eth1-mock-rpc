@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"flag"
 	"fmt"
 	"io"
@@ -87,8 +88,8 @@ func main() {
 	} else if recalculate || os.IsNotExist(err) {
 		// If the file does not exist at the tmp directory, we decrypt
 		// from the keystore directory and then attempt to persist to the cache.
-		log.Infof("Decrypting private keys from %s, this may take a while...", *keystorePath)
-		allDeposits, err = createDepositDataFromKeystore(*keystorePath, *password)
+		log.Infof("Decrypting private keys from %s, this may take a while...", filepath.Clean(*keystorePath))
+		allDeposits, err = createDepositDataFromKeystore(filepath.Clean(*keystorePath), *password)
 		if err != nil {
 			log.Fatalf("Could not create deposit data from keystore directory: %v", err)
 		}
