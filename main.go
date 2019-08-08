@@ -43,6 +43,7 @@ var (
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
 	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
 	numGenesisDeposits    = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
+	blockTime             = flag.Int("block-time", 14, "Average time between blocks in seconds, default: 14s (Goerli testnet)")
 	verbosity             = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
 	pprof                 = flag.Bool("pprof", false, "Enable pprof")
 	log                   = logrus.WithField("prefix", "main")
@@ -187,7 +188,7 @@ func main() {
 
 	go srv.listenForDepositTrigger()
 
-	go srv.advanceEth1Chain()
+	go srv.advanceEth1Chain(*blockTime)
 
 	select {}
 }
@@ -430,8 +431,8 @@ func (s *server) listenForDepositTrigger() {
 	}
 }
 
-func (s *server) advanceEth1Chain() {
-	tick := time.NewTicker(time.Second * 10)
+func (s *server) advanceEth1Chain(blockTime int) {
+	tick := time.NewTicker(time.Second * time.Duration(blockTime))
 	for {
 		select {
 		case <-tick.C:
