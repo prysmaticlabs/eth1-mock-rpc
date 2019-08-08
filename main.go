@@ -148,6 +148,7 @@ func main() {
 	blocksByNumber := eth1.ConstructBlocksByNumber(currentBlockNumber, eth1BlockTime)
 	blockNumbersByHash := make(map[common.Hash]uint64)
 	for k, v := range blocksByNumber {
+		log.Info(v.Number.Uint64())
 		h := v.Hash()
 		blockNumbersByHash[h] = k
 	}
@@ -160,6 +161,7 @@ func main() {
 
 	for i := 0; i < *numGenesisDeposits; i++ {
 		logs[i].BlockHash = blocksByNumber[currentBlockNumber].Hash()
+		logs[i].BlockNumber = currentBlockNumber
 	}
 
 	srv := &server{
@@ -209,8 +211,8 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	log.WithField("method", requestItem.Method).Debug("Received HTTP-RPC request")
-	log.Debugf("%v", requestItem)
+	//log.WithField("method", requestItem.Method).Debug("Received HTTP-RPC request")
+	//log.Debugf("%v", requestItem)
 
 	stringRep := requestItem.String()
 	switch requestItem.Method {
@@ -350,6 +352,7 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec, headFee
 			data, _ := json.Marshal(head)
 			params, _ := json.Marshal(&subscriptionResult{ID: string(latestSubID), Result: data})
 			ctx := context.Background()
+			log.Printf("Sending out chain head %d", head.Number.Uint64())
 			item := &jsonrpcMessage{
 				Version: "2.0",
 				Method:  "eth_subscription",
@@ -426,6 +429,8 @@ func (s *server) listenForDepositTrigger() {
 		s.numDepositsReadyToSend += num
 		for i := 0; i < s.numDepositsReadyToSend; i++ {
 			s.eth1Logs[i].BlockHash = s.eth1BlocksByNumber[s.eth1BlockNum].Hash()
+			s.eth1Logs[i].BlockNumber = s.eth1BlockNum
+			log.Printf("Set new deposit hash %#x and number %d", s.eth1Logs[i].BlockHash, s.eth1BlockNum)
 		}
 	}
 }
@@ -436,6 +441,7 @@ func (s *server) advanceEth1Chain() {
 		select {
 		case <-tick.C:
 			s.eth1BlockNum++
+			log.Printf("Advanced chain head to %d", s.eth1BlockNum)
 			head := eth1.BlockHeader(s.eth1BlockNum)
 			s.eth1BlocksByNumber[s.eth1BlockNum] = head
 			s.eth1BlockNumbersByHash[head.Hash()] = s.eth1BlockNum
