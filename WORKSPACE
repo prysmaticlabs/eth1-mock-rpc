@@ -184,7 +184,7 @@ go_repository(
 
 go_repository(
     name = "com_github_pkg_profile",
-    commit = "f6fe06335df110bcf1ed6d4e852b760bfc15beee",
+    commit = "f6fe06335df110bcf1ed6d4e852b760bfc15beee",  # v1.3.0
     importpath = "github.com/pkg/profile",
 )
 
