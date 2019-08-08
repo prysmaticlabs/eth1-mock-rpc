@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"path/filepath"
 	"flag"
 	"fmt"
 	"io"
