@@ -11,7 +11,7 @@ func TestConstructBlocksByNumber(t *testing.T) {
 	res := ConstructBlocksByNumber(num, blockTime)
 	numKeys := uint64(0)
 	currBlock := res[num]
-	for k, v := range res {
+	for _, v := range res {
 		// We ensure block times increase monotonically from
 		// block number 0 to 5.
 		if v.Time > currBlock.Time {
