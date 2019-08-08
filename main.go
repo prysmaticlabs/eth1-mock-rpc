@@ -37,7 +37,7 @@ const (
 )
 
 var (
-	keystoreDirs          = flag.String("keystore-dirs", "", "List of comma-separated paths to validator keystore directories")
+	keystoreDirs          = flag.String("keystore-dirs", "", "Comma-separated list of paths to validator keystore directories")
 	keystorePasswords     = flag.String("keystore-passwords", "", "Comma-separated list of text passwords to unlocking the validator keystores")
 	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
