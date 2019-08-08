@@ -210,8 +210,6 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	//log.WithField("method", requestItem.Method).Debug("Received HTTP-RPC request")
-	//log.Debugf("%v", requestItem)
 
 	stringRep := requestItem.String()
 	switch requestItem.Method {
