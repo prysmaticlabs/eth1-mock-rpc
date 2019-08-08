@@ -149,7 +149,6 @@ func main() {
 	blockNumbersByHash := make(map[common.Hash]uint64)
 	for k, v := range blocksByNumber {
 		h := v.Hash()
-		log.Infof("%#x and %d", h, k)
 		blockNumbersByHash[h] = k
 	}
 
@@ -263,9 +262,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var blockHash [32]byte
 		copy(blockHash[:], blockHashBytes)
 		numByHash := s.eth1BlockNumbersByHash[blockHash]
-		log.Infof("Number for hash: %#x, %s", blockHash, numByHash)
 		block := s.eth1BlocksByNumber[numByHash]
-		log.Infof("Block with hash: %#x, %s", block.Hash(), block.Number.String())
 		response := requestItem.response(block)
 		if err := codec.Write(ctx, response); err != nil {
 			log.Error(err)
