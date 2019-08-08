@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/hex"
 	"encoding/json"
-	"path/filepath"
 	"flag"
 	"fmt"
 	"io"
@@ -12,13 +12,18 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/pkg/profile"
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
 	"github.com/sirupsen/logrus"
 	prefixed "github.com/x-cray/logrus-prefixed-formatter"
@@ -28,16 +33,19 @@ import (
 const (
 	maxRequestContentLength = 1024 * 512
 	defaultErrorCode        = -32000
+	eth1BlockTime           = time.Second * 10
 )
 
 var (
-	keystorePath          = flag.String("keystore-path", "", "Path to a validator keystore directory")
-	password              = flag.String("password", "", "Password to unlocking the validator keystore directory")
+	keystoreDirs          = flag.String("keystore-dirs", "", "Comma-separated list of paths to validator keystore directories")
+	keystorePasswords     = flag.String("keystore-passwords", "", "Comma-separated list of text passwords to unlocking the validator keystores")
 	wsPort                = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort              = flag.String("http-port", "7777", "Port on which to serve http listeners")
 	invalidateCache       = flag.Bool("invalidate-cache", false, "Recalculate deposits into a cache from a keystore")
 	numGenesisDeposits    = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
+	blockTime             = flag.Int("block-time", 14, "Average time between blocks in seconds, default: 14s (Goerli testnet)")
 	verbosity             = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
+	pprof                 = flag.Bool("pprof", false, "Enable pprof")
 	log                   = logrus.WithField("prefix", "main")
 	persistedDepositsJSON = "deposits.json"
 )
@@ -46,7 +54,11 @@ type server struct {
 	depositsLock           sync.Mutex
 	numDepositsReadyToSend int
 	deposits               []*eth1.DepositData
+	eth1BlocksByNumber     map[uint64]*types.Header
+	eth1BlockNumbersByHash map[common.Hash]uint64
 	eth1Logs               []types.Log
+	eth1BlockNum           uint64
+	eth1HeadFeed           *event.Feed
 	genesisTime            uint64
 }
 
@@ -77,6 +89,12 @@ func main() {
 	tmp := os.TempDir()
 	cachePath := path.Join(tmp, persistedDepositsJSON)
 	recalculate := *invalidateCache
+	dirs := strings.Split(*keystoreDirs, ",")
+	passwords := strings.Split(*keystorePasswords, ",")
+	if len(dirs) != len(passwords) {
+		log.Fatal("Need to have the same number of keystore paths and passwords")
+	}
+
 	// We attempt to retrieve deposits from a local tmp file
 	// as an optimization to prevent reading and decrypting raw private keys
 	// from the validator keystore every single time the mock server is launched.
@@ -88,10 +106,13 @@ func main() {
 	} else if recalculate || os.IsNotExist(err) {
 		// If the file does not exist at the tmp directory, we decrypt
 		// from the keystore directory and then attempt to persist to the cache.
-		log.Infof("Decrypting private keys from %s, this may take a while...", filepath.Clean(*keystorePath))
-		allDeposits, err = createDepositDataFromKeystore(filepath.Clean(*keystorePath), *password)
-		if err != nil {
-			log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+		for i := 0; i < len(dirs); i++ {
+			log.Infof("Decrypting private keys from %s, this may take a while...", dirs[i])
+			dps, err := createDepositDataFromKeystore(dirs[i], passwords[i])
+			if err != nil {
+				log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+			}
+			allDeposits = append(allDeposits, dps...)
 		}
 		w, err := os.Create(cachePath)
 		if err != nil {
@@ -103,7 +124,7 @@ func main() {
 	} else {
 		log.Fatalf("Could not read from %s: %v", cachePath, err)
 	}
-	log.Infof("Successfully loaded %d private keys from the keystore directory", len(allDeposits))
+	log.Infof("Successfully loaded %d private keys from the keystore directories", len(allDeposits))
 
 	if *numGenesisDeposits > len(allDeposits) {
 		log.Fatalf(
@@ -121,16 +142,43 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// We also compute a history of eth1 blocks to be used to respond to RPC requests for
+	// blocks by number, getting our mock server to closely resemble a real chain.
+	currentBlockNumber := uint64(2000)
+	blocksByNumber := eth1.ConstructBlocksByNumber(currentBlockNumber, eth1BlockTime)
+	blockNumbersByHash := make(map[common.Hash]uint64)
+	for k, v := range blocksByNumber {
+		h := v.Hash()
+		blockNumbersByHash[h] = k
+	}
+
+	// We precalculate a list of deposit logs from the entire in-memory deposits list.
 	logs, err := eth1.DepositEventLogs(allDeposits)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	for i := 0; i < *numGenesisDeposits; i++ {
+		logs[i].BlockHash = blocksByNumber[currentBlockNumber].Hash()
+		logs[i].BlockNumber = currentBlockNumber
+	}
+
 	srv := &server{
 		numDepositsReadyToSend: *numGenesisDeposits,
 		deposits:               allDeposits,
 		eth1Logs:               logs,
+		eth1BlockNum:           currentBlockNumber,
+		eth1BlockNumbersByHash: blockNumbersByHash,
+		eth1BlocksByNumber:     blocksByNumber,
+		eth1HeadFeed:           new(event.Feed),
 		genesisTime:            uint64(time.Now().Add(10 * time.Second).Unix()),
 	}
+
+	if *pprof {
+		defer profile.Start().Stop()
+	}
+
 	log.Println("Starting HTTP listener on port :7777")
 	go http.Serve(httpListener, srv)
 
@@ -139,6 +187,8 @@ func main() {
 	go wsSrv.Serve(wsListener)
 
 	go srv.listenForDepositTrigger()
+
+	go srv.advanceEth1Chain(*blockTime)
 
 	select {}
 }
@@ -161,20 +211,58 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	log.WithField("method", requestItem.Method).Debug("Received HTTP-RPC request")
-	log.Debugf("%v", requestItem)
 
 	stringRep := requestItem.String()
 	switch requestItem.Method {
 	case "eth_getBlockByNumber":
-		block := eth1.BlockHeaderByNumber()
+		typs := []reflect.Type{
+			reflect.TypeOf("s"),
+			reflect.TypeOf(true),
+		}
+		args, err := parsePositionalArguments(requestItem.Params, typs)
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+
+		var block *types.Header
+		if args[0].String() == "latest" {
+			block = s.eth1BlocksByNumber[s.eth1BlockNum]
+		} else {
+			num, err := hexutil.DecodeBig(args[0].String())
+			if err != nil {
+				log.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			block = s.eth1BlocksByNumber[num.Uint64()]
+		}
+
 		response := requestItem.response(block)
 		if err := codec.Write(ctx, response); err != nil {
 			log.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	case "eth_getBlockByHash":
-		block := eth1.BlockHeaderByHash(s.genesisTime)
+		typs := []reflect.Type{
+			reflect.TypeOf("s"),
+			reflect.TypeOf(true),
+		}
+		args, err := parsePositionalArguments(requestItem.Params, typs)
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		h := args[0].String()
+		// Strip out the 0x prefix.
+		blockHashBytes, err := hex.DecodeString(h[2:])
+		if err != nil {
+			log.Error(err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		var blockHash [32]byte
+		copy(blockHash[:], blockHashBytes)
+		numByHash := s.eth1BlockNumbersByHash[blockHash]
+		block := s.eth1BlocksByNumber[numByHash]
 		response := requestItem.response(block)
 		if err := codec.Write(ctx, response); err != nil {
 			log.Error(err)
@@ -240,15 +328,17 @@ func (s *server) ServeWebsocket() http.Handler {
 			defer codec.Close()
 			// Listen to read events from the codec and dispatch events or errors accordingly.
 			go wsHandler.websocketReadLoop(codec)
-			go wsHandler.dispatchWebsocketEventLoop(codec)
+			go wsHandler.dispatchWebsocketEventLoop(codec, s.eth1HeadFeed)
 			<-codec.Closed()
 		},
 	}
 }
 
-func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
-	tick := time.NewTicker(time.Second * 10)
+func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec, headFeed *event.Feed) {
 	var latestSubID rpc.ID
+	headChan := make(chan *types.Header, 1)
+	sub := headFeed.Subscribe(headChan)
+	defer sub.Unsubscribe()
 	for {
 		select {
 		case <-w.close:
@@ -256,8 +346,7 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 		case err := <-w.readErr:
 			log.WithError(err).Error("Could not read data from request")
 			return
-		case <-tick.C:
-			head := eth1.LatestChainHead(w.blockNum)
+		case head := <-headChan:
 			data, _ := json.Marshal(head)
 			params, _ := json.Marshal(&subscriptionResult{ID: string(latestSubID), Result: data})
 			ctx := context.Background()
@@ -270,7 +359,6 @@ func (w *websocketHandler) dispatchWebsocketEventLoop(codec ServerCodec) {
 				log.Error(err)
 				continue
 			}
-			w.blockNum++
 		case msgs := <-w.readOperation:
 			sub := &rpc.Subscription{ID: rpc.NewID()}
 			item := &jsonrpcMessage{
@@ -336,5 +424,23 @@ func (s *server) listenForDepositTrigger() {
 			continue
 		}
 		s.numDepositsReadyToSend += num
+		for i := 0; i < s.numDepositsReadyToSend; i++ {
+			s.eth1Logs[i].BlockHash = s.eth1BlocksByNumber[s.eth1BlockNum].Hash()
+			s.eth1Logs[i].BlockNumber = s.eth1BlockNum
+		}
+	}
+}
+
+func (s *server) advanceEth1Chain(blockTime int) {
+	tick := time.NewTicker(time.Second * time.Duration(blockTime))
+	for {
+		select {
+		case <-tick.C:
+			s.eth1BlockNum++
+			head := eth1.BlockHeader(s.eth1BlockNum)
+			s.eth1BlocksByNumber[s.eth1BlockNum] = head
+			s.eth1BlockNumbersByHash[head.Hash()] = s.eth1BlockNum
+			s.eth1HeadFeed.Send(head)
+		}
 	}
 }

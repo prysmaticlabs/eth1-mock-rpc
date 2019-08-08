@@ -39,9 +39,36 @@ func DepositCount(deposits []*DepositData) [8]byte {
 	return depCount
 }
 
-// LatestChainHead returns the latest eth1 chain into a channel.
-func LatestChainHead(blockNum uint64) *types.Header {
-	head := &types.Header{
+// ConstructBlocksByNumber builds a list of historical blocks down to block 0 from some current block number,
+// used to simulate a real eth1 chain which can be queried for all of its blocks by their respective number.
+func ConstructBlocksByNumber(currentBlockNum uint64, blockTime time.Duration) map[uint64]*types.Header {
+	m := make(map[uint64]*types.Header)
+	currentTime := uint64(time.Now().Unix())
+	for i := currentBlockNum; i > 0; i-- {
+		header := &types.Header{
+			ParentHash:  common.Hash([32]byte{}),
+			UncleHash:   types.EmptyUncleHash,
+			Coinbase:    common.Address([20]byte{}),
+			Root:        common.Hash([32]byte{}),
+			TxHash:      types.EmptyRootHash,
+			ReceiptHash: common.Hash([32]byte{}),
+			Bloom:       types.Bloom{},
+			Difficulty:  big.NewInt(20),
+			Number:      big.NewInt(int64(i)),
+			GasLimit:    100,
+			GasUsed:     100,
+			Time:        currentTime,
+			Extra:       []byte("hello world"),
+		}
+		m[i] = header
+		currentTime = currentTime - uint64(blockTime.Seconds())
+	}
+	return m
+}
+
+// BlockHeader returns a block header with time.Now and a blockNum.
+func BlockHeader(blockNum uint64) *types.Header {
+	return &types.Header{
 		ParentHash:  common.Hash([32]byte{}),
 		UncleHash:   types.EmptyUncleHash,
 		Coinbase:    common.Address([20]byte{}),
@@ -54,45 +81,6 @@ func LatestChainHead(blockNum uint64) *types.Header {
 		GasLimit:    100,
 		GasUsed:     100,
 		Time:        uint64(time.Now().Unix()),
-		Extra:       []byte("hello world"),
-	}
-	return head
-}
-
-// BlockHeaderByHash returns a block header given a raw hash.
-func BlockHeaderByHash(genesisTime uint64) *types.Header {
-	return &types.Header{
-		ParentHash:  common.Hash([32]byte{}),
-		UncleHash:   types.EmptyUncleHash,
-		Coinbase:    common.Address([20]byte{}),
-		Root:        common.Hash([32]byte{}),
-		TxHash:      types.EmptyRootHash,
-		ReceiptHash: common.Hash([32]byte{}),
-		Bloom:       types.Bloom{},
-		Difficulty:  big.NewInt(20),
-		Number:      big.NewInt(int64(100)),
-		GasLimit:    100,
-		GasUsed:     100,
-		Time:        genesisTime,
-		Extra:       []byte("hello world"),
-	}
-}
-
-// BlockHeaderByNumber returns a block header given a block height.
-func BlockHeaderByNumber() *types.Header {
-	return &types.Header{
-		ParentHash:  common.Hash([32]byte{}),
-		UncleHash:   types.EmptyUncleHash,
-		Coinbase:    common.Address([20]byte{}),
-		Root:        common.Hash([32]byte{}),
-		TxHash:      types.EmptyRootHash,
-		ReceiptHash: common.Hash([32]byte{}),
-		Bloom:       types.Bloom{},
-		Difficulty:  big.NewInt(20),
-		Number:      big.NewInt(int64(100)),
-		GasLimit:    100,
-		GasUsed:     100,
-		Time:        1578009600,
 		Extra:       []byte("hello world"),
 	}
 }
@@ -120,13 +108,12 @@ func DepositEventLogs(deposits []*DepositData) ([]types.Log, error) {
 			return nil, nil
 		}
 		logs[i] = types.Log{
-			BlockHash: common.Hash([32]byte{1, 2, 3, 4, 5}),
-			Address:   common.Address([20]byte{}),
-			Topics:    []common.Hash{depositEventHash},
-			Data:      depositLog,
-			TxHash:    common.Hash([32]byte{}),
-			TxIndex:   100,
-			Index:     10,
+			Address: common.Address([20]byte{}),
+			Topics:  []common.Hash{depositEventHash},
+			Data:    depositLog,
+			TxHash:  common.Hash([32]byte{}),
+			TxIndex: 100,
+			Index:   10,
 		}
 	}
 	return logs, nil
