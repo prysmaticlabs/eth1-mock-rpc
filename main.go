@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -100,7 +101,8 @@ func main() {
 	// If an unecrypted keys file is specified, we create a set of deposits using those keys.
 	providedUnencryptedKeys := *unencryptedKeysFile != ""
 	if providedUnencryptedKeys {
-		r, err := os.Open(*unencryptedKeysFile)
+		pth, _ := filepath.Abs(*unencryptedKeysFile)
+		r, err := os.Open(pth)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -112,11 +114,14 @@ func main() {
 			ValidatorKey  []byte `json:"validator_key"`
 			WithdrawalKey []byte `json:"withdrawal_key"`
 		}
-		var keys []*unencryptedKeys
-		if err := json.Unmarshal(encoded, &keys); err != nil {
+		type other struct {
+			Keys []*unencryptedKeys `json:"keys"`
+		}
+		var ot *other
+		if err := json.Unmarshal(encoded, &ot); err != nil {
 			log.Fatal(err)
 		}
-		log.Info(keys)
+		log.Info(ot.Keys[0])
 		log.Fatal("Exiting...")
 	} else {
 		// We attempt to retrieve deposits from a local tmp file
