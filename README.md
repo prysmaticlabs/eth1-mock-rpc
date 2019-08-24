@@ -27,11 +27,11 @@ bazel version
 2. Clone this repository and enter the directory:
 ```
 git clone https://github.com/prysmaticlabs/eth1-mock-rpc
-cd prysm
+cd eth1-mock-rpc
 ```
 3. Build the project:
 ```
-bazel build ///...
+bazel build //...
 ```
 Bazel will automatically pull and install any dependencies as well, including Go and necessary compilers.
 
