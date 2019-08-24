@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -46,6 +47,7 @@ var (
 	blockTime             = flag.Int("block-time", 14, "Average time between blocks in seconds, default: 14s (Goerli testnet)")
 	verbosity             = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
 	pprof                 = flag.Bool("pprof", false, "Enable pprof")
+	unencryptedKeysFile   = flag.String("unencrypted-keys", "", "Path to json file containing unencrypted validator private keys")
 	log                   = logrus.WithField("prefix", "main")
 	persistedDepositsJSON = "deposits.json"
 )
@@ -95,36 +97,59 @@ func main() {
 		log.Fatal("Need to have the same number of keystore paths and passwords")
 	}
 
-	// We attempt to retrieve deposits from a local tmp file
-	// as an optimization to prevent reading and decrypting raw private keys
-	// from the validator keystore every single time the mock server is launched.
-	if r, err := os.Open(cachePath); !recalculate && err == nil {
-		allDeposits, err = retrieveDepositData(r)
-		if err != nil {
-			log.Fatalf("Could not retrieve deposits from %s: %v", cachePath, err)
-		}
-	} else if recalculate || os.IsNotExist(err) {
-		// If the file does not exist at the tmp directory, we decrypt
-		// from the keystore directory and then attempt to persist to the cache.
-		for i := 0; i < len(dirs); i++ {
-			log.Infof("Decrypting private keys from %s, this may take a while...", dirs[i])
-			dps, err := createDepositDataFromKeystore(dirs[i], passwords[i])
-			if err != nil {
-				log.Fatalf("Could not create deposit data from keystore directory: %v", err)
-			}
-			allDeposits = append(allDeposits, dps...)
-		}
-		w, err := os.Create(cachePath)
+	// If an unecrypted keys file is specified, we create a set of deposits using those keys.
+	providedUnencryptedKeys := *unencryptedKeysFile != ""
+	if providedUnencryptedKeys {
+		r, err := os.Open(*unencryptedKeysFile)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := persistDepositData(w, allDeposits); err != nil {
-			log.Errorf("Could not persist deposits to disk: %v", err)
+		encoded, err := ioutil.ReadAll(r)
+		if err != nil {
+			log.Fatal(err)
 		}
+		type unencryptedKeys struct {
+			ValidatorKey  []byte `json:"validator_key"`
+			WithdrawalKey []byte `json:"withdrawal_key"`
+		}
+		var keys []*unencryptedKeys
+		if err := json.Unmarshal(encoded, &keys); err != nil {
+			log.Fatal(err)
+		}
+		log.Info(keys)
+		log.Fatal("Exiting...")
 	} else {
-		log.Fatalf("Could not read from %s: %v", cachePath, err)
+		// We attempt to retrieve deposits from a local tmp file
+		// as an optimization to prevent reading and decrypting raw private keys
+		// from the validator keystore every single time the mock server is launched.
+		if r, err := os.Open(cachePath); !recalculate && err == nil {
+			allDeposits, err = retrieveDepositData(r)
+			if err != nil {
+				log.Fatalf("Could not retrieve deposits from %s: %v", cachePath, err)
+			}
+		} else if recalculate || os.IsNotExist(err) {
+			// If the file does not exist at the tmp directory, we decrypt
+			// from the keystore directory and then attempt to persist to the cache.
+			for i := 0; i < len(dirs); i++ {
+				log.Infof("Decrypting private keys from %s, this may take a while...", dirs[i])
+				dps, err := createDepositDataFromKeystore(dirs[i], passwords[i])
+				if err != nil {
+					log.Fatalf("Could not create deposit data from keystore directory: %v", err)
+				}
+				allDeposits = append(allDeposits, dps...)
+			}
+			w, err := os.Create(cachePath)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if err := persistDepositData(w, allDeposits); err != nil {
+				log.Errorf("Could not persist deposits to disk: %v", err)
+			}
+		} else {
+			log.Fatalf("Could not read from %s: %v", cachePath, err)
+		}
+		log.Infof("Successfully loaded %d private keys from the keystore directories", len(allDeposits))
 	}
-	log.Infof("Successfully loaded %d private keys from the keystore directories", len(allDeposits))
 
 	if *numGenesisDeposits > len(allDeposits) {
 		log.Fatalf(
