@@ -2,47 +2,48 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 
 	"github.com/prysmaticlabs/eth1-mock-rpc/eth1"
-	"github.com/prysmaticlabs/prysm/shared/keystore"
 )
 
-const (
-	withdrawalPrivkeyFileName = "/shardwithdrawalkey"
-	validatorPrivkeyFileName  = "/validatorprivatekey"
-)
+type unencryptedKeysContainer struct {
+	Keys []*unencryptedKeys `json:"keys"`
+}
 
-func createDepositDataFromKeystore(directory string, password string) ([]*eth1.DepositData, error) {
-	if directory == "" || password == "" {
-		return nil, errors.New("expected a path to the validator keystore and password to be provided, received nil")
-	}
-	ks := keystore.NewKeystore(directory)
-	withdrawalKeys, err := ks.GetKeys(directory, withdrawalPrivkeyFileName, password)
+type unencryptedKeys struct {
+	ValidatorKey  []byte `json:"validator_key"`
+	WithdrawalKey []byte `json:"withdrawal_key"`
+}
+
+func parseUnencryptedKeysFile(r io.Reader) ([][]byte, [][]byte, error) {
+	encoded, err := ioutil.ReadAll(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	validatorKeys, err := ks.GetKeys(directory, validatorPrivkeyFileName, password)
-	if err != nil {
-		return nil, err
+	var ctnr *unencryptedKeysContainer
+	if err := json.Unmarshal(encoded, &ctnr); err != nil {
+		return nil, nil, err
 	}
+	validatorKeys := make([][]byte, 0)
+	withdrawalKeys := make([][]byte, 0)
+	for _, item := range ctnr.Keys {
+		validatorKeys = append(validatorKeys, item.ValidatorKey)
+		withdrawalKeys = append(withdrawalKeys, item.WithdrawalKey)
+	}
+	return validatorKeys, withdrawalKeys, nil
+}
+
+func createDepositDataFromKeys(validatorKeys [][]byte, withdrawalKeys [][]byte) ([]*eth1.DepositData, error) {
 	if len(validatorKeys) != len(withdrawalKeys) {
-		return nil, errors.New("unequal number of validator and withdrawal keys")
+		return nil, fmt.Errorf("received different number of validator keys %d and withdrawal keys %d", len(validatorKeys), len(withdrawalKeys))
 	}
-	valMapKeys := []string{}
-	withdrawalMapKeys := []string{}
-	for k := range validatorKeys {
-		valMapKeys = append(valMapKeys, k)
-	}
-	for k := range withdrawalKeys {
-		withdrawalMapKeys = append(withdrawalMapKeys, k)
-	}
-	depositDataItems := make([]*eth1.DepositData, len(valMapKeys))
+	depositDataItems := make([]*eth1.DepositData, len(validatorKeys))
 	for i := 0; i < len(depositDataItems); i++ {
-		valSecretKey := validatorKeys[valMapKeys[i]].SecretKey.Marshal()
-		withdrawalSecretKey := withdrawalKeys[withdrawalMapKeys[i]].SecretKey.Marshal()
+		valSecretKey := validatorKeys[i]
+		withdrawalSecretKey := withdrawalKeys[i]
 		data, err := eth1.CreateDepositData(valSecretKey, withdrawalSecretKey, eth1.MaxEffectiveBalance)
 		if err != nil {
 			return nil, err
@@ -50,27 +51,4 @@ func createDepositDataFromKeystore(directory string, password string) ([]*eth1.D
 		depositDataItems[i] = data
 	}
 	return depositDataItems, nil
-}
-
-func retrieveDepositData(r io.Reader) ([]*eth1.DepositData, error) {
-	encodedData, err := ioutil.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-	var deposits []*eth1.DepositData
-	if err := json.Unmarshal(encodedData, &deposits); err != nil {
-		return nil, err
-	}
-	return deposits, nil
-}
-
-func persistDepositData(w io.Writer, deposits []*eth1.DepositData) error {
-	encodedData, err := json.Marshal(deposits)
-	if err != nil {
-		return err
-	}
-	if _, err := w.Write(encodedData); err != nil {
-		return err
-	}
-	return nil
 }
