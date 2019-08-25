@@ -37,23 +37,16 @@ Bazel will automatically pull and install any dependencies as well, including Go
 
 ### Build the Prysm Project
 
-Instructions on downloading and building Prysm for local use can be found in the latest Prysm [README.md](https://github.com/prysmaticlabs/prysm/blob/master/README.md).
 
 
 ## Running the Mock ETH1 RPC Server
 
-### Generate Validator Keys
+### Validator Private Keys
 
-You'll need to generate a bunch of validator private keys so that the mock ETH1 server can simulate enough validator deposits. **Navigate to the Prysm repository locally**, and run:
-
-```sh
-bazel run //validator -- accounts create --password PASSWORD --keystore-path /path/to/keystore
-```
-
-This will generate a single validator in your local keystore. You'll need 64 minimum to reach genesis in Prysm. Now, using that same keystore you just created, **in a separate terminal window**, navigate to the `eth1-mock-rpc` project and launch the eth1 mock RPC:
+You'll need a file of unencrypted validator private keys to use for triggering mock deposits. You can use `unencrypted_keys.json` at the root of this directory for this purpose. You can then run the mock using:
 
 ```sh
-bazel run //:eth1-mock-rpc -- --password PASSWORD --keystore-path /path/to/keystore
+bazel run //:eth1-mock-rpc -- --genesis-deposits 64 --unencrypted-keys /path/to/unencrypted_keys.json
 ```
 
 Once your server is running, it will launch an HTTP and websocket listener at http://localhost:7777 and http://localhost:7778 respectively. You can now launch the Prysm project and point it to these endpoints to receive mock data:
