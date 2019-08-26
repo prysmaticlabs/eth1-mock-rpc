@@ -8,10 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"reflect"
 	"strconv"
 	"strings"
@@ -37,14 +38,14 @@ const (
 )
 
 var (
-	wsPort              = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
-	httpPort            = flag.String("http-port", "7777", "Port on which to serve http listeners")
-	numGenesisDeposits  = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
-	blockTime           = flag.Int("block-time", 14, "Average time between blocks in seconds, default: 14s (Goerli testnet)")
-	verbosity           = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
-	pprof               = flag.Bool("pprof", false, "Enable pprof")
-	unencryptedKeysFile = flag.String("unencrypted-keys", "", "Path to json file containing unencrypted validator private keys")
-	log                 = logrus.WithField("prefix", "main")
+	wsPort             = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
+	httpPort           = flag.String("http-port", "7777", "Port on which to serve http listeners")
+	numGenesisDeposits = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
+	blockTime          = flag.Int("block-time", 14, "Average time between blocks in seconds, default: 14s (Goerli testnet)")
+	verbosity          = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
+	pprof              = flag.Bool("pprof", false, "Enable pprof")
+	unencryptedKeysDir = flag.String("unencrypted-keys-dir", "", "Path to directory of json files containing unencrypted validator private keys")
+	log                = logrus.WithField("prefix", "main")
 )
 
 type server struct {
@@ -82,22 +83,28 @@ func main() {
 		log.Fatal("Please enter a valid number of --genesis-deposits to read from the keystore")
 	}
 
-	// If an unencrypted keys file is specified, we create a set of deposits using those keys.
-	providedUnencryptedKeys := *unencryptedKeysFile != ""
+	// If an unencrypted keys directory is not specified, we throw an error
+	providedUnencryptedKeys := *unencryptedKeysDir != ""
 	if !providedUnencryptedKeys {
-		log.Fatal("Please enter a file of unencrypted private keys for launching the mock server")
+		log.Fatal("Please enter a path to a directory of unencrypted private key JSON files for launching the mock server")
 	}
-	pth, err := filepath.Abs(*unencryptedKeysFile)
+	fileInfo, err := ioutil.ReadDir(*unencryptedKeysDir)
 	if err != nil {
 		log.Fatal(err)
 	}
-	r, err := os.Open(pth)
-	if err != nil {
-		log.Fatal(err)
-	}
-	validatorKeys, withdrawalKeys, err := parseUnencryptedKeysFile(r)
-	if err != nil {
-		log.Fatal(err)
+	validatorKeys := make([][]byte, 0)
+	withdrawalKeys := make([][]byte, 0)
+	for _, file := range fileInfo {
+		r, err := os.Open(path.Join(*unencryptedKeysDir, file.Name()))
+		if err != nil {
+			log.Fatal(err)
+		}
+		vkey, wkey, err := parseUnencryptedKeysFile(r)
+		if err != nil {
+			log.Fatal(err)
+		}
+		validatorKeys = append(validatorKeys, vkey...)
+		withdrawalKeys = append(withdrawalKeys, wkey...)
 	}
 	allDeposits, err := createDepositDataFromKeys(validatorKeys, withdrawalKeys)
 	if err != nil {
