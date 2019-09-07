@@ -106,13 +106,15 @@ go_repository(
 
 go_repository(
     name = "com_github_prysmaticlabs_prysm",
-    commit = "0b3ce46d28ad1fd7da62e3cbbe38274c2e48c001",
+    commit = "784d96f6189caa95f001d698af7a9485103c24e4",
     importpath = "github.com/prysmaticlabs/prysm",
+    remote = "https://github.com/0xKiwi/prysm",
+    vcs = "git",
 )
 
 go_repository(
     name = "com_github_phoreproject_bls",
-    commit = "b495094dc72c7043b549f511a798391201624b14",
+    commit = "da95d4798b09e9f45a29dc53124b2a0b4c1dfc13",
     importpath = "github.com/phoreproject/bls",
 )
 
@@ -191,3 +193,15 @@ go_repository(
 load("@com_github_prysmaticlabs_go_ssz//:deps.bzl", "go_ssz_dependencies")
 
 go_ssz_dependencies()
+
+go_repository(
+    name = "com_github_minio_sha256_simd",
+    commit = "649be62517ba577ad7da146440ebfabeea0fb613",
+    importpath = "github.com/minio/sha256-simd",
+)
+
+go_repository(
+    name = "com_github_pkg_errors",
+    commit = "27936f6d90f9c8e1145f11ed52ffffbfdb9e0af7",
+    importpath = "github.com/pkg/errors",
+)
