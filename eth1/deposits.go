@@ -45,7 +45,7 @@ func CreateDepositData(validatorKey []byte, withdrawalKey []byte, amountInGwei u
 		Amount:                amountInGwei,
 	}
 
-	sr, err := ssz.HashTreeRoot(di)
+	sr, err := ssz.SigningRoot(di)
 	if err != nil {
 		return nil, err
 	}
