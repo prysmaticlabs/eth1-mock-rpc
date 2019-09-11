@@ -8,7 +8,7 @@ import (
 
 var (
 	// MaxEffectiveBalance of an active eth2 validator.
-	MaxEffectiveBalance      = uint64(3.2 * 1e9)
+	MaxEffectiveBalance      = uint64(32 * 1e9)
 	blsWithdrawalPrefixByte  = byte(0)
 	domainDeposit            = [4]byte{3, 0, 0, 0}
 	genesisForkVersion       = []byte{0, 0, 0, 0}
