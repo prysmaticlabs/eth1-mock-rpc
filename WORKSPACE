@@ -61,6 +61,13 @@ load(
 
 _go_image_repos()
 
+git_repository(
+    name = "graknlabs_bazel_distribution",
+    commit = "bd93910450a0f041f5d34a4b97faffcabba21419",
+    remote = "https://github.com/graknlabs/bazel-distribution",
+    shallow_since = "1563544980 +0300",
+)
+
 go_repository(
     name = "com_github_aristanetworks_goarista",
     commit = "728bce664cf5dfb921941b240828f989a2c8f8e3",
