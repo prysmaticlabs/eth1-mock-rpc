@@ -247,7 +247,6 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		copy(blockHash[:], blockHashBytes)
 		numByHash := s.eth1BlockNumbersByHash[blockHash]
 		block := s.eth1BlocksByNumber[numByHash]
-		block.Time = uint64(time.Now().Unix())
 		response := requestItem.response(block)
 		if err := codec.Write(ctx, response); err != nil {
 			log.Error(err)
