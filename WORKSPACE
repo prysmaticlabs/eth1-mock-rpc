@@ -1,4 +1,5 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 http_archive(
     name = "io_bazel_rules_go",
@@ -61,6 +62,13 @@ load(
 
 _go_image_repos()
 
+git_repository(
+    name = "graknlabs_bazel_distribution",
+    commit = "bd93910450a0f041f5d34a4b97faffcabba21419",
+    remote = "https://github.com/graknlabs/bazel-distribution",
+    shallow_since = "1563544980 +0300",
+)
+
 go_repository(
     name = "com_github_aristanetworks_goarista",
     commit = "728bce664cf5dfb921941b240828f989a2c8f8e3",
@@ -100,7 +108,7 @@ go_repository(
 
 go_repository(
     name = "com_github_prysmaticlabs_go_ssz",
-    commit = "08374e459d08fc6abeb43011a206ad54602e71b6",
+    commit = "9193cae6b7c3347054706b8466db139b8be90985",
     importpath = "github.com/prysmaticlabs/go-ssz",
 )
 
