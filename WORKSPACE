@@ -194,7 +194,7 @@ go_ssz_dependencies()
 
 go_repository(
     name = "com_github_minio_sha256_simd",
-    commit = "649be62517ba577ad7da146440ebfabeea0fb613",
+    commit = "6de4475307716de15b286880ff321c9547086fdd",  # v0.1.1
     importpath = "github.com/minio/sha256-simd",
 )
 
