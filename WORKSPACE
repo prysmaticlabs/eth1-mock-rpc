@@ -114,7 +114,7 @@ go_repository(
 
 go_repository(
     name = "com_github_prysmaticlabs_prysm",
-    commit = "b4975f2b9d97f2c4035d9924d9e7dd97835f38a6",
+    commit = "5e939378d0c83c074bfed6ecaba5b505074a7a01",
     importpath = "github.com/prysmaticlabs/prysm",
 )
 
@@ -199,3 +199,15 @@ go_repository(
 load("@com_github_prysmaticlabs_go_ssz//:deps.bzl", "go_ssz_dependencies")
 
 go_ssz_dependencies()
+
+go_repository(
+    name = "com_github_minio_sha256_simd",
+    commit = "649be62517ba577ad7da146440ebfabeea0fb613",
+    importpath = "github.com/minio/sha256-simd",
+)
+
+go_repository(
+    name = "com_github_pkg_errors",
+    commit = "27936f6d90f9c8e1145f11ed52ffffbfdb9e0af7",
+    importpath = "github.com/pkg/errors",
+)
