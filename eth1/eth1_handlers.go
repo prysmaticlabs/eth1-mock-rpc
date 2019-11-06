@@ -26,9 +26,8 @@ func DepositMethodID() string {
 // DepositLogsID returns the event hash from the ABI corresponding to
 // fetching the deposit logs event.
 func DepositLogsID() string {
-	// TODO():Find the proper way to retrieve the hash
-	eventHash := "863a311b"
-	return "data\":\"0x" + eventHash + "\""
+	methodHash := hashutil.HashKeccak256([]byte("get_deposit_root()"))
+	return "data\":\"0x" + common.Bytes2Hex(methodHash[:4]) + "\""
 }
 
 // DepositCount returns an encoded number of deposits.
