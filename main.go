@@ -35,6 +35,7 @@ const (
 	maxRequestContentLength = 1024 * 512
 	defaultErrorCode        = -32000
 	eth1BlockTime           = time.Second * 10
+	startingBlockNumber     = 2000
 )
 
 var (
@@ -129,7 +130,7 @@ func main() {
 
 	// We also compute a history of eth1 blocks to be used to respond to RPC requests for
 	// blocks by number, getting our mock server to closely resemble a real chain.
-	currentBlockNumber := uint64(2000)
+	currentBlockNumber := uint64(startingBlockNumber)
 	blocksByNumber := eth1.ConstructBlocksByNumber(currentBlockNumber, eth1BlockTime)
 	blockNumbersByHash := make(map[common.Hash]uint64)
 	for k, v := range blocksByNumber {
@@ -218,6 +219,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Error(err)
 				w.WriteHeader(http.StatusInternalServerError)
 			}
+			if num.Uint64() < startingBlockNumber {
+				num = num.SetInt64(startingBlockNumber)
+			}
 			block = s.eth1BlocksByNumber[num.Uint64()]
 		}
 
@@ -246,6 +250,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var blockHash [32]byte
 		copy(blockHash[:], blockHashBytes)
 		numByHash := s.eth1BlockNumbersByHash[blockHash]
+		if numByHash < startingBlockNumber {
+			numByHash = startingBlockNumber
+		}
 		block := s.eth1BlocksByNumber[numByHash]
 		response := requestItem.response(block)
 		if err := codec.Write(ctx, response); err != nil {
