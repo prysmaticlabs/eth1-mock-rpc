@@ -57,6 +57,7 @@ type server struct {
 	eth1BlockNumbersByHash map[common.Hash]uint64
 	eth1Logs               []types.Log
 	eth1BlockNum           uint64
+	depositsToSend         int
 	eth1HeadFeed           *event.Feed
 	genesisTime            uint64
 }
@@ -390,7 +391,12 @@ func (w *websocketHandler) websocketReadLoop(codec ServerCodec) {
 
 func (s *server) listenForDepositTrigger() {
 	reader := bufio.NewReader(os.Stdin)
+	headChan := make(chan *types.Header, 1)
+	sub := s.eth1HeadFeed.Subscribe(headChan)
+	defer sub.Unsubscribe()
 	for {
+		// only allow triggering after a new head
+		<-headChan
 		maxAllowed := len(s.deposits) - s.numDepositsReadyToSend
 		log.Printf(
 			"Enter the number of new eth2 deposits to trigger (max allowed %d): ",
@@ -414,11 +420,7 @@ func (s *server) listenForDepositTrigger() {
 			)
 			continue
 		}
-		s.numDepositsReadyToSend += num
-		for i := 0; i < s.numDepositsReadyToSend; i++ {
-			s.eth1Logs[i].BlockHash = s.eth1BlocksByNumber[s.eth1BlockNum].Hash()
-			s.eth1Logs[i].BlockNumber = s.eth1BlockNum
-		}
+		s.depositsToSend = num
 	}
 }
 
@@ -431,6 +433,12 @@ func (s *server) advanceEth1Chain(blockTime int) {
 			head := eth1.BlockHeader(s.eth1BlockNum)
 			s.eth1BlocksByNumber[s.eth1BlockNum] = head
 			s.eth1BlockNumbersByHash[head.Hash()] = s.eth1BlockNum
+			for i := s.numDepositsReadyToSend; i < (s.numDepositsReadyToSend + s.depositsToSend); i++ {
+				s.eth1Logs[i].BlockHash = s.eth1BlocksByNumber[s.eth1BlockNum].Hash()
+				s.eth1Logs[i].BlockNumber = s.eth1BlockNum
+			}
+			s.numDepositsReadyToSend += s.depositsToSend
+			s.depositsToSend = 0
 			s.eth1HeadFeed.Send(head)
 		}
 	}
