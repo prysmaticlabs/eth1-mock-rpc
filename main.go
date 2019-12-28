@@ -391,12 +391,7 @@ func (w *websocketHandler) websocketReadLoop(codec ServerCodec) {
 
 func (s *server) listenForDepositTrigger() {
 	reader := bufio.NewReader(os.Stdin)
-	headChan := make(chan *types.Header, 1)
-	sub := s.eth1HeadFeed.Subscribe(headChan)
-	defer sub.Unsubscribe()
 	for {
-		// only allow triggering after a new head
-		<-headChan
 		maxAllowed := len(s.deposits) - s.numDepositsReadyToSend
 		log.Printf(
 			"Enter the number of new eth2 deposits to trigger (max allowed %d): ",
@@ -421,6 +416,10 @@ func (s *server) listenForDepositTrigger() {
 			continue
 		}
 		s.depositsToSend = num
+		for s.depositsToSend != 0 {
+			time.Sleep(1 * time.Second)
+			// wait till its sent again
+		}
 	}
 }
 
