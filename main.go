@@ -418,7 +418,7 @@ func (s *server) listenForDepositTrigger() {
 		s.depositsToSend = num
 		for s.depositsToSend != 0 {
 			time.Sleep(1 * time.Second)
-			// wait till its sent again
+			// wait till it's sent again
 		}
 	}
 }
