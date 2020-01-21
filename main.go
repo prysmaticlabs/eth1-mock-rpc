@@ -185,7 +185,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn := &httpServerConn{Reader: body, Writer: w, r: r}
 	codec := NewJSONCodec(conn)
 	defer codec.Close()
-	msgs, _, err := codec.Read()
+	msgs, batch, err := codec.Read()
 	if err != nil {
 		log.WithError(err).Error("Could not read data from request")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -201,33 +201,60 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stringRep := requestItem.String()
 	switch requestItem.Method {
 	case "eth_getBlockByNumber":
-		typs := []reflect.Type{
-			reflect.TypeOf("s"),
-			reflect.TypeOf(true),
-		}
-		args, err := parsePositionalArguments(requestItem.Params, typs)
-		if err != nil {
-			log.Error(err)
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-
-		var block *types.Header
-		if args[0].String() == "latest" {
-			block = s.eth1BlocksByNumber[s.eth1BlockNum]
-		} else {
-			num, err := hexutil.DecodeBig(args[0].String())
+		blocks := make([]*types.Header, 0)
+		for i := 0; i < len(msgs); i++ {
+			typs := []reflect.Type{
+				reflect.TypeOf("s"),
+				reflect.TypeOf(true),
+			}
+			args, err := parsePositionalArguments(requestItem.Params, typs)
 			if err != nil {
 				log.Error(err)
 				w.WriteHeader(http.StatusInternalServerError)
+				return
 			}
-			if num.Uint64() < startingBlockNumber {
-				num = num.SetInt64(startingBlockNumber)
-			}
-			block = s.eth1BlocksByNumber[num.Uint64()]
-		}
 
-		response := requestItem.response(block)
-		if err := codec.Write(ctx, response); err != nil {
+			var block *types.Header
+			var ok bool
+			if args[0].String() == "latest" {
+				block, ok = s.eth1BlocksByNumber[s.eth1BlockNum]
+				if !ok {
+					log.Errorf("Block with 'latest' does not exist at blocknumber %d", s.eth1BlockNum)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+			} else {
+				num, err := hexutil.DecodeBig(args[0].String())
+				if err != nil {
+					log.Error(err)
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+				if num.Uint64() < startingBlockNumber {
+					num = num.SetInt64(startingBlockNumber)
+				}
+				block, ok = s.eth1BlocksByNumber[num.Uint64()]
+				if !ok {
+					log.Errorf("Block %d does not exist", num.Uint64())
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+			}
+			blocks = append(blocks, block)
+		}
+		if len(blocks) == 1 && !batch {
+			response := requestItem.response(blocks[0])
+			if err := codec.Write(ctx, response); err != nil {
+				log.Error(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			return
+		}
+		responses := make([]*jsonrpcMessage, 0)
+		for i, b := range blocks {
+			res := msgs[i].response(b)
+			responses = append(responses, res)
+		}
+		if err := codec.Write(ctx, responses); err != nil {
 			log.Error(err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
