@@ -15,9 +15,9 @@ http_archive(
 
 http_archive(
     name = "com_github_atlassian_bazel_tools",
-    sha256 = "6b438f4d8c698f69ed4473cba12da3c3a7febf90ce8e3c383533d5a64d8c8f19",
-    strip_prefix = "bazel-tools-6fbc36c639a8f376182bb0057dd557eb2440d4ed",
-    urls = ["https://github.com/atlassian/bazel-tools/archive/6fbc36c639a8f376182bb0057dd557eb2440d4ed.tar.gz"],
+    sha256 = "9527449ff22cf19446250bab0d4542400a531c048a0af2c08da356e31976ac24",
+    strip_prefix = "bazel-tools-b05c89cea96b66b5fa9f7814b7f29d069c5c282d",
+    urls = ["https://github.com/atlassian/bazel-tools/archive/b05c89cea96b66b5fa9f7814b7f29d069c5c282d.tar.gz"],
 )
 
 http_archive(
