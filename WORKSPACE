@@ -29,9 +29,9 @@ http_archive(
 
 http_archive(
     name = "io_kubernetes_build",
-    sha256 = "dd02a62c2a458295f561e280411b04d2efbd97e4954986a401a9a1334cc32cc3",
-    strip_prefix = "repo-infra-1b2ddaf3fb8775a5d0f4e28085cf846f915977a8",
-    url = "https://github.com/kubernetes/repo-infra/archive/1b2ddaf3fb8775a5d0f4e28085cf846f915977a8.tar.gz",
+    sha256 = "f4a99337b43b742d35f8592055af72aeb5ea0cdfa1acadd99d9e972d9aedd2b1",
+    strip_prefix = "repo-infra-dccb5aa645ea455a1c8c4c97a2a72b640036efc9",
+    url = "https://github.com/kubernetes/repo-infra/archive/dccb5aa645ea455a1c8c4c97a2a72b640036efc9.tar.gz",
 )
 
 load(
