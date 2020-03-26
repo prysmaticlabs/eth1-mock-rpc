@@ -13,13 +13,13 @@ This project serves as a mock server that simulates that deposit functionality w
 
 ## Installation
 
-To run the tool, you'll need to install: 
+To run the tool, you'll need to install:
 
   - The latest release of [Bazel](https://docs.bazel.build/versions/master/install.html)
   - A modern GNU/Linux operating system
 
 ### Build the Mock ETH1 RPC Server
-
+#### Native
 1. Open a terminal window. Ensure you are running the most recent version of Bazel by issuing the command:
 ```
 bazel version
@@ -35,26 +35,10 @@ bazel build //...
 ```
 Bazel will automatically pull and install any dependencies as well, including Go and necessary compilers.
 
-### Build the Prysm Project
-
-
-## Docker:
-### Build
+#### Docker
 ```
-docker built -t eth1-mock-rpc .
-docker run --rm -it eth1-mock-rpc --help
-
-# NOTE: see prysmaticlabs/prysm repo for
-#       directions on how to generate keys
-
-docker run --rm \
-  -v <path-to-keys-dir>:/keys \
-  eth1-mock-rpc \
-    --unencrypted-keys-dir /keys \
-    --genesis-deposits 64 \
-    --prompt-for-deposit=false
+docker build -t eth1-mock-rpc .
 ```
-
 
 ## Running the Mock ETH1 RPC Server
 
@@ -68,6 +52,7 @@ bazel run //:eth1-mock-rpc -- --genesis-deposits 64 --unencrypted-keys /path/to/
 
 Once your server is running, it will launch an HTTP and websocket listener at http://localhost:7777 and http://localhost:7778 respectively. You can now launch the Prysm project and point it to these endpoints to receive mock data:
 
+#### Native
 ```sh
 bazel run //beacon-chain -- \
 --no-discovery \
@@ -75,6 +60,16 @@ bazel run //beacon-chain -- \
 --web3provider ws://localhost:7778 \
 --clear-db \
 --verbosity debug
+```
+
+#### Docker
+```
+docker run --rm \
+  -v <path-to-unencrypted-keys-dir>:/keys \
+  eth1-mock-rpc \
+    --unencrypted-keys-dir /keys \
+    --genesis-deposits 64 \
+    --prompt-for-deposit=false
 ```
 
 ## License
