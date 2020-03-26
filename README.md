@@ -38,6 +38,23 @@ Bazel will automatically pull and install any dependencies as well, including Go
 ### Build the Prysm Project
 
 
+## Docker:
+### Build
+```
+docker built -t eth1-mock-rpc .
+docker run --rm -it eth1-mock-rpc --help
+
+# NOTE: see prysmaticlabs/prysm repo for
+#       directions on how to generate keys
+
+docker run --rm \
+  -v <path-to-keys-dir>:/keys \
+  eth1-mock-rpc \
+    --unencrypted-keys-dir /keys \
+    --genesis-deposits 64 \
+    --prompt-for-deposit=false
+```
+
 
 ## Running the Mock ETH1 RPC Server
 
