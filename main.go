@@ -47,6 +47,9 @@ var (
 	pprof              = flag.Bool("pprof", false, "Enable pprof")
 	unencryptedKeysDir = flag.String("unencrypted-keys-dir", "", "Path to directory of json files containing unencrypted validator private keys")
 	log                = logrus.WithField("prefix", "main")
+	// use this flag when running non-interactively
+	// otherwise, prompt will spam stdout
+	promptForDeposits  = flag.Bool("prompt-for-deposits", true, "Prompt user to trigger deposits")
 )
 
 type server struct {
@@ -172,7 +175,9 @@ func main() {
 	wsSrv := &http.Server{Handler: srv.ServeWebsocket()}
 	go wsSrv.Serve(wsListener)
 
-	go srv.listenForDepositTrigger()
+	if *promptForDeposits {
+		go srv.listenForDepositTrigger()
+	}
 
 	go srv.advanceEth1Chain(*blockTime)
 
