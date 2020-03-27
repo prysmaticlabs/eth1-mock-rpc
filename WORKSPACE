@@ -159,7 +159,7 @@ go_repository(
 go_repository(
     name = "com_github_minio_highwayhash",
     importpath = "github.com/minio/highwayhash",
-    commit = "02ca4b43caa3297fbb615700d8800acc7933be98",
+    commit = "02ca4b43caa3297fbb615700d8800acc7933be98",  # v1.0.0
 )
 
 go_repository(
