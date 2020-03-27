@@ -3,21 +3,27 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "f04d2373bcaf8aa09bccb08a98a57e721306c8f6043a2a0ee610fd6853dcde3d",
-    url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.6/rules_go-0.18.6.tar.gz",
+    sha256 = "e6a6c016b0663e06fa5fccf1cd8152eab8aa8180c583ec20c872f4f9953a7ac5",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.22.1/rules_go-v0.22.1.tar.gz",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.22.1/rules_go-v0.22.1.tar.gz",
+    ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "3c681998538231a2d24d0c07ed5a7658cb72bfb5fd4bf9911157c0e9ac6a2687",
-    urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/0.17.0/bazel-gazelle-0.17.0.tar.gz"],
+    sha256 = "d8c45ee70ec39a57e7a05e5027c32b1576cc7f16d9dd37135b0eddde45cf1b10",
+    urls = [
+        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/v0.20.0/bazel-gazelle-v0.20.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.20.0/bazel-gazelle-v0.20.0.tar.gz",
+    ],
 )
 
 http_archive(
     name = "com_github_atlassian_bazel_tools",
-    sha256 = "6b438f4d8c698f69ed4473cba12da3c3a7febf90ce8e3c383533d5a64d8c8f19",
-    strip_prefix = "bazel-tools-6fbc36c639a8f376182bb0057dd557eb2440d4ed",
-    urls = ["https://github.com/atlassian/bazel-tools/archive/6fbc36c639a8f376182bb0057dd557eb2440d4ed.tar.gz"],
+    sha256 = "60821f298a7399450b51b9020394904bbad477c18718d2ad6c789f231e5b8b45",
+    strip_prefix = "bazel-tools-a2138311856f55add11cd7009a5abc8d4fd6f163",
+    urls = ["https://github.com/atlassian/bazel-tools/archive/a2138311856f55add11cd7009a5abc8d4fd6f163.tar.gz"],
 )
 
 http_archive(
@@ -32,6 +38,17 @@ http_archive(
     sha256 = "dd02a62c2a458295f561e280411b04d2efbd97e4954986a401a9a1334cc32cc3",
     strip_prefix = "repo-infra-1b2ddaf3fb8775a5d0f4e28085cf846f915977a8",
     url = "https://github.com/kubernetes/repo-infra/archive/1b2ddaf3fb8775a5d0f4e28085cf846f915977a8.tar.gz",
+)
+
+http_archive(
+    name = "herumi_bls_eth_go_binary",
+    strip_prefix = "bls-eth-go-binary-da18d415993a059052dfed16711f2b3bd03c34b8",
+    urls = [
+    "https://github.com/herumi/bls-eth-go-binary/archive/da18d415993a059052dfed16711f2b3bd03c34b8.tar.gz",
+    ],
+    sha256 = "69080ca634f8aaeb0950e19db218811f4bb920a054232e147669ea574ba11ef0",
+    build_file = "@com_github_prysmaticlabs_prysm//third_party/herumi:bls_eth_go_binary.BUILD",
+
 )
 
 load(
@@ -114,7 +131,7 @@ go_repository(
 
 go_repository(
     name = "com_github_prysmaticlabs_prysm",
-    commit = "5e939378d0c83c074bfed6ecaba5b505074a7a01",
+    commit = "ec2a100ba992c1a61d66c605c867d0da9777d741",
     importpath = "github.com/prysmaticlabs/prysm",
 )
 
@@ -125,15 +142,46 @@ go_repository(
 )
 
 go_repository(
-    name = "com_github_karlseguin_ccache",
-    commit = "ec06cd93a07565b373789b0078ba88fe697fddd9",
-    importpath = "github.com/karlseguin/ccache",
+    name = "com_github_dgraph_io_ristretto",
+    commit = "99d1bbbf28e64530eb246be0568fc7709a35ebdd",  # v0.0.1
+    importpath = "github.com/dgraph-io/ristretto",
+)
+
+go_repository(
+    name = "com_github_minio_highwayhash",
+    importpath = "github.com/minio/highwayhash",
+    commit = "02ca4b43caa3297fbb615700d8800acc7933be98",
+)
+
+go_repository(
+    name = "in_gopkg_urfave_cli_v2",
+    importpath = "gopkg.in/urfave/cli.v2",
+    sum = "h1:OvXt/p4cdwNl+mwcWMq/AxaKFkhdxcjx+tx+qf4EOvY=",
+    version = "v2.0.0-20190806201727-b62605953717",
+)
+
+go_repository(
+    name = "com_github_cespare_xxhash",
+    commit = "d7df74196a9e781ede915320c11c378c1b2f3a1f",
+    importpath = "github.com/cespare/xxhash",
 )
 
 go_repository(
     name = "com_github_prysmaticlabs_go_bitfield",
     commit = "ec88cc4d1d143cad98308da54b73d0cdb04254eb",
     importpath = "github.com/prysmaticlabs/go-bitfield",
+)
+
+go_repository(
+    name = "org_golang_x_net",
+    commit = "da137c7871d730100384dbcf36e6f8fa493aef5b",
+    importpath = "golang.org/x/net",
+)
+
+go_repository(
+    name = "org_golang_x_sys",
+    commit = "fae7ac547cb717d141c433a2a173315e216b64c4",
+    importpath = "golang.org/x/sys",
 )
 
 go_repository(

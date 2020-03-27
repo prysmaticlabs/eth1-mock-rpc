@@ -32,6 +32,11 @@ type ForkData struct {
 	GenesisValidatorsRoot [32]byte
 }
 
+type SigningRoot struct {
+	ObjectRoot [32]byte
+	Domain     [32]byte
+}
+
 // CreateDepositData takes in raw private key bytes and a deposit amount and generates
 // the proper DepositData Eth2 struct type. This involves BLS signing the deposit,
 // generating hashed withdrawal credentials, and including the public key from the validator's
@@ -55,12 +60,19 @@ func CreateDepositData(validatorKey []byte, withdrawalKey []byte, amountInGwei u
 	if err != nil {
 		return nil, err
 	}
-
 	d, err := domain()
 	if err != nil {
 		return nil, err
 	}
-	di.Signature = sk1.Sign(sr[:], d).Marshal()
+	rt, err := ssz.HashTreeRoot(&SigningRoot{
+		ObjectRoot: sr,
+		Domain:     d,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	di.Signature = sk1.Sign(rt[:]).Marshal()
 	return di, nil
 }
 
@@ -76,16 +88,16 @@ func withdrawalCredentialsHash(withdrawalKey *bls.SecretKey) []byte {
 	return append([]byte{blsWithdrawalPrefixByte}, h[0:]...)[:32]
 }
 
-func domain() ([]byte, error) {
+func domain() ([32]byte, error) {
 	root, err := ssz.HashTreeRoot(&ForkData{
 		CurrentVersion:        genesisForkVersion,
 		GenesisValidatorsRoot: zerohash,
 	})
 	if err != nil {
-		return []byte{}, err
+		return [32]byte{}, err
 	}
-	b := []byte{}
-	b = append(b, domainDeposit[:4]...)
-	b = append(b, root[:28]...)
+	b := [32]byte{}
+	copy(b[:], domainDeposit[:4])
+	copy(b[4:], root[:28])
 	return b, nil
 }
