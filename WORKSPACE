@@ -171,7 +171,7 @@ go_repository(
 
 go_repository(
     name = "com_github_cespare_xxhash",
-    commit = "d7df74196a9e781ede915320c11c378c1b2f3a1f",
+    commit = "d7df74196a9e781ede915320c11c378c1b2f3a1f",  # v2.1.1
     importpath = "github.com/cespare/xxhash",
 )
 
