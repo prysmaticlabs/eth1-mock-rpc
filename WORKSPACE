@@ -265,6 +265,6 @@ go_repository(
 
 go_repository(
     name = "com_github_pkg_errors",
-    commit = "27936f6d90f9c8e1145f11ed52ffffbfdb9e0af7",
+    commit = "614d223910a179a466c1767a985424175c39b465",  # v0.9.1
     importpath = "github.com/pkg/errors",
 )
