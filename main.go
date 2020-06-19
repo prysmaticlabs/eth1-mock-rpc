@@ -41,12 +41,16 @@ const (
 var (
 	wsPort             = flag.String("ws-port", "7778", "Port on which to serve websocket listeners")
 	httpPort           = flag.String("http-port", "7777", "Port on which to serve http listeners")
+	host               = flag.String("host", "localhost", "Host on which to listen (default: localhost)")
 	numGenesisDeposits = flag.Int("genesis-deposits", 0, "Number of deposits to read from the keystore to trigger the genesis event")
 	blockTime          = flag.Int("block-time", 14, "Average time between blocks in seconds, default: 14s (Goerli testnet)")
 	verbosity          = flag.String("verbosity", "info", "Logging verbosity (debug, info=default, warn, error, fatal, panic)")
 	pprof              = flag.Bool("pprof", false, "Enable pprof")
 	unencryptedKeysDir = flag.String("unencrypted-keys-dir", "", "Path to directory of json files containing unencrypted validator private keys")
 	log                = logrus.WithField("prefix", "main")
+	// use this flag when running non-interactively
+	// otherwise, prompt will spam stdout
+	promptForDeposits  = flag.Bool("prompt-for-deposits", true, "Prompt user to trigger deposits")
 )
 
 type server struct {
@@ -120,11 +124,11 @@ func main() {
 		)
 	}
 
-	httpListener, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", *httpPort))
+	httpListener, err := net.Listen("tcp", fmt.Sprintf("%s:%s", *host, *httpPort))
 	if err != nil {
 		log.Fatal(err)
 	}
-	wsListener, err := net.Listen("tcp", fmt.Sprintf("localhost:%s", *wsPort))
+	wsListener, err := net.Listen("tcp", fmt.Sprintf("%s:%s", *host, *wsPort))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -172,7 +176,9 @@ func main() {
 	wsSrv := &http.Server{Handler: srv.ServeWebsocket()}
 	go wsSrv.Serve(wsListener)
 
-	go srv.listenForDepositTrigger()
+	if *promptForDeposits {
+		go srv.listenForDepositTrigger()
+	}
 
 	go srv.advanceEth1Chain(*blockTime)
 
