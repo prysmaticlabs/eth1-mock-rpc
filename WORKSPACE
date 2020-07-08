@@ -28,9 +28,9 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_docker",
-    sha256 = "aed1c249d4ec8f703edddf35cbe9dfaca0b5f5ea6e4cd9e83e99f3b0d1136c3d",
-    strip_prefix = "rules_docker-0.7.0",
-    url = "https://github.com/bazelbuild/rules_docker/archive/v0.7.0.tar.gz",
+    sha256 = "4521794f0fba2e20f3bf15846ab5e01d5332e587e9ce81629c7f96c793bb7036",
+    strip_prefix = "rules_docker-0.14.4",
+    url = "https://github.com/bazelbuild/rules_docker/archive/v0.14.4.tar.gz",
 )
 
 http_archive(
