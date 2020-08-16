@@ -195,7 +195,7 @@ go_repository(
 
 go_repository(
     name = "com_github_pborman_uuid",
-    commit = "8b1b92947f46224e3b97bb1a3a5b0382be00d31e",  # v1.2.0
+    commit = "5b6091a6a160ee5ce12917b21ab96acec2a4fdc0",  # v1.2.1
     importpath = "github.com/pborman/uuid",
 )
 
